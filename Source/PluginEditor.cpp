@@ -241,6 +241,24 @@ void WaveformView::paint (juce::Graphics& g)
         g.drawText ("LOOP", (int) x + 3, 3, 40, 14, juce::Justification::left);
     }
 
+    // freeze position
+    if (proc.apvts.getRawParameterValue ("freeze")->load() > 0.5f)
+    {
+        const float fp = proc.apvts.getRawParameterValue ("freezePos")->load() * 0.01f;
+        int fs = map->trimStart, fe = map->trimEnd;
+        if (mode == SliceDeckProcessor::modeSlice && selectedSlice < (int) map->slices.size())
+        {
+            fs = map->slices[(size_t) selectedSlice].start;
+            fe = map->slices[(size_t) selectedSlice].end;
+        }
+        const float x = xFor (fs + (int) (fp * (float) (fe - fs)), len);
+        g.setColour (accent.withAlpha (0.9f));
+        const float dashes[] = { 2.0f, 2.0f };
+        g.drawDashedLine (juce::Line<float> (x, 0.0f, x, (float) getHeight()), dashes, 2, 2.0f);
+        g.setFont (11.0f);
+        g.drawText ("FREEZE", (int) x + 3, getHeight() - 32, 50, 14, juce::Justification::left);
+    }
+
     // playhead
     const int ph = proc.getPlayheadSample();
     if (ph >= 0 && ph < len)
@@ -419,18 +437,32 @@ SliceDeckEditor::SliceDeckEditor (SliceDeckProcessor& p)
     setupToggle (filterOn, "filterOn", "Filter On");
     setupToggle (embed, "embed", "Embed in project");
 
+    setupCombo (engine, "engine", "Engine");
+    setupCombo (character, "character", "Character");
+    setupCombo (trigBy, "trigBy", "Trigger Slices By");
+    setupKnob (speed, "speed", "Speed");
+    setupKnob (charAmount, "charAmount", "Amount");
+    setupKnob (freezePos, "freezePos", "Position");
+    setupKnob (freezeSize, "freezeSize", "Grain Size");
+    setupKnob (sampleBpm, "sampleBpm", "Sample BPM");
+    setupKnob (formant, "formant", "Formant");
+    setupKnob (select, "select", "Select");
+    setupToggle (freeze, "freeze", "Freeze");
+    setupToggle (sync, "sync", "Sync to tempo");
+    setupToggle (keepFormants, "keepFormants", "Keep formants");
+
+    sliceLoop.setClickingTogglesState (true);
+    addAndMakeVisible (sliceLoop);
+    sliceLoop.onClick = [this] { pushSliceSetting(); };
+
     setupPlainKnob (sliceVol, "Slice Vol", -36.0, 12.0, 0.0, " dB");
     setupPlainKnob (slicePitch, "Slice Pitch", -24.0, 24.0, 0.0, " st");
     slicePitch.slider.setRange (-24.0, 24.0, 0.01);
-    auto pushSlice = [this]
-    {
-        proc.setSliceSetting (waveform.selectedSlice, (float) sliceVol.slider.getValue(), (float) slicePitch.slider.getValue());
-    };
-    sliceVol.slider.onValueChange = pushSlice;
-    slicePitch.slider.onValueChange = pushSlice;
+    sliceVol.slider.onValueChange = [this] { pushSliceSetting(); };
+    slicePitch.slider.onValueChange = [this] { pushSliceSetting(); };
 
     proc.addChangeListener (this);
-    setSize (980, 640);
+    setSize (1060, 800);
     changeListenerCallback (nullptr);
     selectSlice (0);
     updateVisibility();
@@ -459,9 +491,13 @@ void SliceDeckEditor::setupKnob (Knob& k, const juce::String& id, const juce::St
     static const std::map<juce::String, juce::String> suffixes {
         { "attack", " ms" }, { "decay", " ms" }, { "release", " ms" }, { "fade", " ms" },
         { "sustain", " %" }, { "vel", " %" }, { "sensitivity", " %" }, { "reso", " %" }, { "loopStart", " %" },
-        { "cutoff", " Hz" }, { "volume", " dB" }, { "detune", " ct" }, { "transpose", " st" } };
+        { "cutoff", " Hz" }, { "volume", " dB" }, { "detune", " ct" }, { "transpose", " st" },
+        { "speed", " %" }, { "charAmount", " %" }, { "freezePos", " %" }, { "freezeSize", " ms" },
+        { "formant", " st" }, { "select", " %" }, { "sampleBpm", " BPM" } };
     auto it = suffixes.find (id);
     if (it != suffixes.end()) k.slider.setTextValueSuffix (it->second);
+    if (auto* p = proc.apvts.getParameter (id))
+        k.slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
 }
 
 void SliceDeckEditor::setupPlainKnob (Knob& k, const juce::String& name, double min, double max, double def, const juce::String& suffix)
@@ -532,6 +568,7 @@ void SliceDeckEditor::paint (juce::Graphics& g)
     };
     drawBox (sampleBox, "SAMPLE");
     drawBox (sliceBox, "SELECTED SLICE");
+    drawBox (playBox, "PLAYBACK");
     drawBox (ampBox, "AMP ENVELOPE");
     drawBox (filterBox, "FILTER");
     drawBox (globalBox, "GLOBAL");
@@ -539,18 +576,20 @@ void SliceDeckEditor::paint (juce::Graphics& g)
 
 void SliceDeckEditor::resized()
 {
+    const int W = getWidth();
     loadButton.setBounds (160, 11, 70, 26);
-    nameLabel.setBounds (240, 11, 470, 26);
-    embed.button.setBounds (getWidth() - 166, 11, 150, 26);
-    statusLabel.setBounds (16, 42, getWidth() - 32, 20);
-    waveform.setBounds (16, 66, getWidth() - 32, 220);
+    nameLabel.setBounds (240, 11, 500, 26);
+    embed.button.setBounds (W - 166, 11, 150, 26);
+    statusLabel.setBounds (16, 42, W - 32, 20);
+    waveform.setBounds (16, 66, W - 32, 220);
 
-    sampleBox = { 16, 298, 718, 160 };
-    sliceBox  = { 744, 298, 220, 160 };
     const int kw = 68, kh = 112;
-    ampBox    = { 16, 468, kw * 5 + 20, 156 };
-    filterBox = { ampBox.getRight() + 10, 468, 128 + kw * 2, 156 };
-    globalBox = { filterBox.getRight() + 10, 468, getWidth() - 16 - (filterBox.getRight() + 10), 156 };
+    sampleBox = { 16, 298, 720, 160 };
+    sliceBox  = { sampleBox.getRight() + 10, 298, W - 16 - (sampleBox.getRight() + 10), 160 };
+    playBox   = { 16, 468, W - 32, 156 };
+    ampBox    = { 16, 634, kw * 5 + 20, 156 };
+    filterBox = { ampBox.getRight() + 10, 634, 128 + kw * 2, 156 };
+    globalBox = { filterBox.getRight() + 10, 634, W - 16 - (filterBox.getRight() + 10), 156 };
 
     // SAMPLE box
     {
@@ -582,20 +621,51 @@ void SliceDeckEditor::resized()
         auto s5 = slot(); placeKnob (fade, s5);
     }
 
-    // SLICE box
+    // SELECTED SLICE box
     {
         auto r = sliceBox.reduced (10).withTrimmedTop (16);
         sliceTitle.setBounds (r.removeFromTop (20));
         r.removeFromTop (4);
+        auto right = r.removeFromRight (100);
+        sliceLoop.setBounds (right.withSizeKeepingCentre (96, 26));
         placeKnob (sliceVol, r.removeFromLeft (r.getWidth() / 2).withHeight (kh - 10));
         placeKnob (slicePitch, r.withHeight (kh - 10));
+    }
+
+    // PLAYBACK box
+    {
+        auto r = playBox.reduced (10).withTrimmedTop (18);
+        auto colA = r.removeFromLeft (130);
+        placeCombo (engine, colA.removeFromTop (44));
+        colA.removeFromTop (6);
+        placeCombo (character, colA.removeFromTop (44));
+        r.removeFromLeft (12);
+        placeKnob (speed, r.removeFromLeft (kw).withHeight (kh));       r.removeFromLeft (8);
+        placeKnob (charAmount, r.removeFromLeft (kw).withHeight (kh));  r.removeFromLeft (20);
+
+        auto colB = r.removeFromLeft (90);
+        freeze.button.setBounds (colB.removeFromTop (60).withSizeKeepingCentre (86, 26));
+        placeKnob (freezePos, r.removeFromLeft (kw).withHeight (kh));   r.removeFromLeft (8);
+        placeKnob (freezeSize, r.removeFromLeft (kw).withHeight (kh));  r.removeFromLeft (20);
+
+        auto colC = r.removeFromLeft (120);
+        sync.button.setBounds (colC.removeFromTop (30).withSizeKeepingCentre (116, 26));
+        colC.removeFromTop (8);
+        keepFormants.button.setBounds (colC.removeFromTop (30).withSizeKeepingCentre (116, 26));
+        r.removeFromLeft (8);
+        placeKnob (sampleBpm, r.removeFromLeft (kw).withHeight (kh));   r.removeFromLeft (8);
+        placeKnob (formant, r.removeFromLeft (kw).withHeight (kh));     r.removeFromLeft (20);
+
+        auto colD = r.removeFromLeft (130);
+        placeCombo (trigBy, colD.removeFromTop (44));
+        r.removeFromLeft (8);
+        placeKnob (select, r.removeFromLeft (kw).withHeight (kh));
     }
 
     auto knobRow = [&] (juce::Rectangle<int> box, std::initializer_list<Knob*> knobs)
     {
         auto r = box.reduced (10).withTrimmedTop (18);
-        for (auto* k : knobs) { placeKnob (*k, r.removeFromLeft (kw).withHeight (kh)); r.removeFromLeft (0); }
-        return r;
+        for (auto* k : knobs) placeKnob (*k, r.removeFromLeft (kw).withHeight (kh));
     };
     knobRow (ampBox, { &attack, &decay, &sustain, &release, &vel });
 
@@ -616,19 +686,28 @@ void SliceDeckEditor::resized()
 //==============================================================================
 void SliceDeckEditor::updateVisibility()
 {
-    const int m = (int) proc.apvts.getRawParameterValue ("mode")->load();
-    const int by = (int) proc.apvts.getRawParameterValue ("sliceBy")->load();
-    const bool lp = proc.apvts.getRawParameterValue ("loop")->load() > 0.5f;
-    if (m == lastMode && by == lastSliceBy && lp == lastLoop) return;
-    lastMode = m; lastSliceBy = by; lastLoop = lp;
+    auto raw = [this] (const char* id) { return proc.apvts.getRawParameterValue (id)->load(); };
+    const int m = (int) raw ("mode");
+    const int by = (int) raw ("sliceBy");
+    const bool lp = raw ("loop") > 0.5f;
+    const int eng = (int) raw ("engine");
+    const int ch = (int) raw ("character");
+    const int tb = (int) raw ("trigBy");
+    const bool fz = raw ("freeze") > 0.5f;
+    if (m == lastMode && by == lastSliceBy && lp == lastLoop && eng == lastEngine
+        && ch == lastChar && tb == lastTrig && fz == lastFreeze) return;
+    lastMode = m; lastSliceBy = by; lastLoop = lp; lastEngine = eng; lastChar = ch; lastTrig = tb; lastFreeze = fz;
 
     const bool isSlice = m == SliceDeckProcessor::modeSlice;
     const bool isClassic = m == SliceDeckProcessor::modeClassic;
+    const bool isStretch = eng == SliceDeckProcessor::engineStretch;
 
     auto show = [] (bool v, std::initializer_list<juce::Component*> comps) { for (auto* c : comps) c->setVisible (v); };
     show (! isClassic, { &playback.box, &playback.label });
     show (isSlice, { &sliceBy.box, &sliceBy.label, &firstNote.slider, &firstNote.label,
-                     &sliceVol.slider, &sliceVol.label, &slicePitch.slider, &slicePitch.label, &sliceTitle });
+                     &sliceVol.slider, &sliceVol.label, &slicePitch.slider, &slicePitch.label, &sliceLoop,
+                     &trigBy.box, &trigBy.label });
+    show (isSlice && tb == SliceDeckProcessor::trigSelect, { &select.slider, &select.label });
     show (! isSlice, { &root.slider, &root.label });
     show (isSlice && by == SliceDeckProcessor::byTransient, { &sensitivity.slider, &sensitivity.label });
     show (isSlice && by == SliceDeckProcessor::byRegion, { &regions.slider, &regions.label });
@@ -636,10 +715,23 @@ void SliceDeckEditor::updateVisibility()
     show (m != SliceDeckProcessor::modeOneShot, { &voices.slider, &voices.label });
     show (isClassic, { &loop.button });
     show (isClassic && lp, { &loopStart.slider, &loopStart.label, &fade.slider, &fade.label });
+    show (ch != 0, { &charAmount.slider, &charAmount.label });
+    show (fz, { &freezePos.slider, &freezePos.label, &freezeSize.slider, &freezeSize.label });
+    show (isStretch, { &sync.button, &keepFormants.button, &sampleBpm.slider, &sampleBpm.label,
+                       &formant.slider, &formant.label });
 
     if (! isSlice) sliceTitle.setText ("Slice mode only", juce::dontSendNotification);
     else selectSlice (waveform.selectedSlice);
     waveform.repaint();
+}
+
+void SliceDeckEditor::pushSliceSetting()
+{
+    SliceSetting s;
+    s.gainDb = (float) sliceVol.slider.getValue();
+    s.pitch = (float) slicePitch.slider.getValue();
+    s.loop = sliceLoop.getToggleState();
+    proc.setSliceSetting (waveform.selectedSlice, s);
 }
 
 void SliceDeckEditor::selectSlice (int index)
@@ -652,6 +744,7 @@ void SliceDeckEditor::selectSlice (int index)
     const auto s = proc.getSliceSetting (index);
     sliceVol.slider.setValue (s.gainDb, juce::dontSendNotification);
     slicePitch.slider.setValue (s.pitch, juce::dontSendNotification);
+    sliceLoop.setToggleState (s.loop, juce::dontSendNotification);
 
     const int first = (int) proc.apvts.getRawParameterValue ("firstNote")->load();
     sliceTitle.setText (count > 0 ? "Slice " + juce::String (index + 1) + " of " + juce::String (count)

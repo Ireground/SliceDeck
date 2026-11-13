@@ -92,6 +92,10 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 
     Combo mode, playback, sliceBy, division, filterType;
+    Combo engine, character, trigBy;
+    Knob speed, charAmount, freezePos, freezeSize, sampleBpm, formant, select;
+    Toggle freeze, sync, keepFormants;
+    juce::TextButton sliceLoop { "Loop slice" };
     Knob sensitivity, regions, voices, root, firstNote, loopStart, fade;
     Knob attack, decay, sustain, release, vel;
     Knob cutoff, reso;
@@ -99,9 +103,10 @@ private:
     Knob sliceVol, slicePitch;
     Toggle loop, reverse, snap, filterOn, embed;
 
-    juce::Rectangle<int> sampleBox, sliceBox, ampBox, filterBox, globalBox;
-    int lastMode = -1, lastSliceBy = -1;
-    bool lastLoop = false;
+    juce::Rectangle<int> sampleBox, sliceBox, playBox, ampBox, filterBox, globalBox;
+    int lastMode = -1, lastSliceBy = -1, lastEngine = -1, lastChar = -1, lastTrig = -1;
+    bool lastLoop = false, lastFreeze = false;
+    void pushSliceSetting();
     int tickCount = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SliceDeckEditor)

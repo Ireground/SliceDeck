@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(SliceDeck VERSION 0.1.0)
+project(SliceDeck VERSION 0.2.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,13 @@ FetchContent_Declare(
     GIT_TAG        8.0.4
     GIT_SHALLOW    TRUE)
 FetchContent_MakeAvailable(JUCE)
+
+# Signalsmith Stretch (MIT licence) - time-stretching / pitch-shifting
+FetchContent_Declare(
+    signalsmith_stretch
+    GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+    GIT_TAG        88061fd4eda56a2353c5d65c74aa3f4ccf76f9da)
+FetchContent_MakeAvailable(signalsmith_stretch)
 
 juce_add_plugin(SliceDeck
     COMPANY_NAME            "Ireground"
@@ -45,8 +52,13 @@ target_compile_definitions(SliceDeck PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0)
 
+if(MSVC)
+    target_compile_options(SliceDeck PRIVATE /bigobj)
+endif()
+
 target_link_libraries(SliceDeck
     PRIVATE
+        signalsmith-stretch
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC

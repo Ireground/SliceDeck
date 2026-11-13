@@ -7,6 +7,12 @@ A simple VST3 slice sampler, modeled on Ableton's Simpler.
 - **Playback:** Trigger (plays the whole slice) or Gate (stops when you release the key)
 - **Per slice:** volume and pitch
 - **Sound:** amp envelope (ADSR), velocity, filter (low-pass, high-pass, band-pass), volume, pan, transpose, detune, reverse, snap to zero crossings
+- **Playback engine:** Repitch (classic: speed changes pitch) or Stretch (time-stretch that keeps pitch, synced to the project tempo, with formant control)
+- **Speed:** -400% to 400%. Negative speeds play backwards.
+- **Character:** Analog (saturation and tape-style roll-off) or Digital (bit and sample-rate reduction), applied per voice
+- **Freeze:** holds the playhead at a position (scrub it by automating Position) and turns the sample into a sustained tone
+- **Trigger slices by:** note, velocity (soft hits play early slices, hard hits play late ones) or the Select knob (automate it to step through slices)
+- **Per-slice loop:** a looped slice repeats while the key is held
 - **Samples:** embedded in the project (on by default). With embedding off, REAPER saves a relative path when the file is inside the project folder.
 
 ## Mouse controls on the waveform
@@ -19,6 +25,8 @@ A simple VST3 slice sampler, modeled on Ableton's Simpler.
 | Drag a marker | Moves it |
 | Drag the orange S / E handles | Sets the sample start / end |
 | Drag the dashed LOOP line | Sets the loop start (Classic mode with Loop on) |
+
+In Stretch mode, Sample BPM is guessed when you load a file (assuming a whole number of beats). Correct it if the guess is wrong, and turn **Sync to tempo** on to follow the project tempo.
 
 The first slice plays on **First Note** (C1 by default), the next one on C#1, and so on.
 
