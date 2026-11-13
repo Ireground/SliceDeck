@@ -520,7 +520,7 @@ void SliceDeckEditor::paint (juce::Graphics& g)
 
     g.setColour (accent);
     g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
-    g.drawText ("SLICEDECK", 16, 10, 140, 26, juce::Justification::left);
+    g.drawText ("SLICEDECK LITE", 16, 10, 200, 26, juce::Justification::left);
 
     auto drawBox = [&] (juce::Rectangle<int> r, const juce::String& title)
     {
@@ -539,8 +539,8 @@ void SliceDeckEditor::paint (juce::Graphics& g)
 
 void SliceDeckEditor::resized()
 {
-    loadButton.setBounds (160, 11, 70, 26);
-    nameLabel.setBounds (240, 11, 470, 26);
+    loadButton.setBounds (200, 11, 70, 26);
+    nameLabel.setBounds (280, 11, 430, 26);
     embed.button.setBounds (getWidth() - 166, 11, 150, 26);
     statusLabel.setBounds (16, 42, getWidth() - 32, 20);
     waveform.setBounds (16, 66, getWidth() - 32, 220);

@@ -16,8 +16,8 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Upload SliceDeck.vst3
+      - name: Upload SliceDeck Lite.vst3
         uses: actions/upload-artifact@v4
         with:
-          name: SliceDeck-VST3-Windows
+          name: SliceDeck-Lite-VST3-Windows
           path: build/SliceDeck_artefacts/Release/VST3/

@@ -1,4 +1,6 @@
-# SliceDeck
+# SliceDeck Lite
+
+The original, simpler version of SliceDeck, kept as its own plugin (it has its own name and ID, so it can be installed next to the full SliceDeck).
 
 A simple VST3 slice sampler, modeled on Ableton's Simpler.
 

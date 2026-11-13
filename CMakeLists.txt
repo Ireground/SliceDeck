@@ -18,9 +18,9 @@ FetchContent_MakeAvailable(JUCE)
 juce_add_plugin(SliceDeck
     COMPANY_NAME            "Ireground"
     PLUGIN_MANUFACTURER_CODE Irgd
-    PLUGIN_CODE             Slcd
+    PLUGIN_CODE             Slcl
     FORMATS                 VST3
-    PRODUCT_NAME            "SliceDeck"
+    PRODUCT_NAME            "SliceDeck Lite"
     IS_SYNTH                TRUE
     NEEDS_MIDI_INPUT        TRUE
     NEEDS_MIDI_OUTPUT       FALSE
