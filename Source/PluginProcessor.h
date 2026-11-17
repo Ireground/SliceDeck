@@ -75,7 +75,13 @@ public:
     enum Engine { engineRepitch = 0, engineStretch };
     enum TrigBy { trigNote = 0, trigVelocity, trigSelect };
 
-    bool loadFile (const juce::File& file, juce::String& error);
+    // startSec/lengthSec select part of the file (0 length = whole file)
+    bool loadFile (const juce::File& file, juce::String& error,
+                   double startSec = 0.0, double lengthSec = 0.0, const juce::String& displayName = {});
+    bool importFromArrange (juce::String& error);
+    bool isInReaper() const noexcept { return reaper.isReaper(); }
+    float getParam (const juce::String& id) const { return param (id); }
+    void setParamValue (const juce::String& id, float plain) { setParam (id, plain); }
     std::shared_ptr<const SampleData> getSampleData() const;
     std::shared_ptr<const SliceMap>   getSliceMap() const;
 
@@ -170,6 +176,7 @@ private:
     juce::AudioBuffer<float> originalAudio;
     double originalRate = 44100.0;
     juce::String sampleName, absolutePath, relativePath;
+    double rangeStart = 0.0, rangeLength = 0.0;   // part of the file used (seconds); 0 length = whole
     bool missing = false, playbackReversed = false;
     std::vector<int> manualPoints;
     std::vector<SliceSetting> sliceSettings;

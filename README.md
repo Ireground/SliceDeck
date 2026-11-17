@@ -15,6 +15,10 @@ A simple VST3 slice sampler, modeled on Ableton's Simpler.
 - **Per-slice loop:** a looped slice repeats while the key is held
 - **Samples:** embedded in the project (on by default). With embedding off, REAPER saves a relative path when the file is inside the project folder.
 
+## Import from REAPER's timeline
+
+Select an audio item on the timeline and click **FROM ARRANGE**. The part of the clip you see on the timeline is loaded (not the whole source file). Item volume, fades, take FX and playback rate are not included; glue the item first if you want them. REAPER only.
+
 ## Mouse controls on the waveform
 
 | Action | What it does |

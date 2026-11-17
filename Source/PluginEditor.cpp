@@ -1,96 +1,59 @@
 #include "PluginEditor.h"
 
-namespace Colours_
+namespace
 {
-    const juce::Colour bg       (0xff18191d);
-    const juce::Colour panel    (0xff23252b);
-    const juce::Colour panelEdge(0xff30333a);
-    const juce::Colour text     (0xffd9dade);
-    const juce::Colour dim      (0xff8a8d96);
-    const juce::Colour accent   (0xffff9e3b);
-    const juce::Colour slice    (0xff4fd1c5);
-    const juce::Colour wave     (0xffc9ccd4);
-}
-using namespace Colours_;
+    // HatsOff light scheme
+    const juce::Colour cBg      { 0xFF141414 };
+    const juce::Colour cPanel   { 0xFFE4E4E1 };
+    const juce::Colour cInset   { 0xFFC9C9C5 };
+    const juce::Colour cInset2  { 0xFFBBBBB7 };
+    const juce::Colour cLabel   { 0xFF5C5C59 };
+    const juce::Colour cText    { 0xFF1C1C1A };
+    const juce::Colour cTrack   { 0xFFB4B4B0 };
+    const juce::Colour cOrange  { 0xFFEF5C25 };
+    const juce::Colour cBlue    { 0xFF3960B6 };
+    const juce::Colour cTeal    { 0xFF2D908B };
+    const juce::Colour cTealHov { 0xFF267C78 };
+    const juce::Colour cPurple  { 0xFF8A4AB8 };
+    const juce::Colour cPurpleH { 0xFF763CA0 };
+    const juce::Colour cPurpleL { 0xFFCDB8E0 };
+    const juce::Colour cRed     { 0xFFD23B2E };
+    const juce::Colour cGreen   { 0xFF23955F };
+    const juce::Colour cGreenL  { 0xFFC3E3D1 };
+    const juce::Colour cGreenH  { 0xFF3DB97D };
 
-static juce::String noteName (int n) { return juce::MidiMessage::getMidiNoteName (n, true, true, 3); }
+    constexpr int W = 1080, H = 614;
+    constexpr float G = 6.0f;
+
+    juce::Font mono (float size, bool bold = false)
+    {
+       #if JUCE_WINDOWS
+        const juce::String name ("Consolas");
+       #else
+        const juce::String name (juce::Font::getDefaultMonospacedFontName());
+       #endif
+        return juce::Font (juce::FontOptions (name, size, bold ? juce::Font::bold : juce::Font::plain));
+    }
+
+    double nowSeconds() { return juce::Time::getMillisecondCounterHiRes() / 1000.0; }
+
+    // Ableton-style names: 36 = C1, 60 = C3
+    juce::String noteName (int n) { return juce::MidiMessage::getMidiNoteName (juce::jlimit (0, 127, n), true, true, 3); }
+
+    float raw (SliceDeckProcessor& p, const char* id) { return p.apvts.getRawParameterValue (id)->load(); }
+}
 
 //==============================================================================
-SliceDeckLook::SliceDeckLook()
-{
-    setColour (juce::Slider::textBoxTextColourId, text);
-    setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    setColour (juce::Label::textColourId, text);
-    setColour (juce::ComboBox::backgroundColourId, panelEdge);
-    setColour (juce::ComboBox::textColourId, text);
-    setColour (juce::ComboBox::arrowColourId, accent);
-    setColour (juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
-    setColour (juce::PopupMenu::backgroundColourId, panel);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, accent.withAlpha (0.35f));
-    setColour (juce::PopupMenu::textColourId, text);
-    setColour (juce::TextButton::textColourOffId, text);
-    setColour (juce::TextButton::textColourOnId, juce::Colours::black);
-}
-
-void SliceDeckLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos,
-                                      float a0, float a1, juce::Slider&)
-{
-    auto r = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (4.0f);
-    const float size = juce::jmin (r.getWidth(), r.getHeight());
-    r = r.withSizeKeepingCentre (size, size);
-    const auto c = r.getCentre();
-    const float rad = size * 0.5f;
-    const float angle = a0 + pos * (a1 - a0);
-
-    juce::Path track;
-    track.addCentredArc (c.x, c.y, rad - 2.0f, rad - 2.0f, 0.0f, a0, a1, true);
-    g.setColour (panelEdge.brighter (0.15f));
-    g.strokePath (track, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    juce::Path value;
-    value.addCentredArc (c.x, c.y, rad - 2.0f, rad - 2.0f, 0.0f, a0, angle, true);
-    g.setColour (accent);
-    g.strokePath (value, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    g.setColour (panelEdge);
-    g.fillEllipse (r.reduced (6.0f));
-    juce::Path tick;
-    tick.addRoundedRectangle (-1.5f, -(rad - 7.0f), 3.0f, rad * 0.45f, 1.5f);
-    g.setColour (text);
-    g.fillPath (tick, juce::AffineTransform::rotation (angle).translated (c.x, c.y));
-}
-
-void SliceDeckLook::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down)
-{
-    auto r = b.getLocalBounds().toFloat().reduced (1.0f);
-    auto col = b.getToggleState() ? accent : panelEdge;
-    if (over) col = col.brighter (0.1f);
-    if (down) col = col.darker (0.1f);
-    g.setColour (col);
-    g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
-}
-
-void SliceDeckLook::drawComboBox (juce::Graphics& g, int w, int h, bool, int, int, int, int, juce::ComboBox&)
-{
-    auto r = juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (0.5f);
-    g.setColour (panelEdge);
-    g.fillRoundedRectangle (r, 4.0f);
-    juce::Path arrow;
-    const float ax = (float) w - 14.0f, ay = (float) h * 0.5f;
-    arrow.addTriangle (ax - 4.0f, ay - 2.0f, ax + 4.0f, ay - 2.0f, ax, ay + 3.0f);
-    g.setColour (accent);
-    g.fillPath (arrow);
-}
-
+//  Waveform
 //==============================================================================
 float WaveformView::xFor (int sample, int len) const
 {
-    return len > 0 ? (float) getWidth() * (float) sample / (float) len : 0.0f;
+    return len > 0 ? 6.0f + (float) (getWidth() - 12) * (float) sample / (float) len : 0.0f;
 }
 
 int WaveformView::sampleAt (float x, int len) const
 {
-    return juce::jlimit (0, juce::jmax (0, len - 1), (int) ((double) x / juce::jmax (1, getWidth()) * len));
+    return juce::jlimit (0, juce::jmax (0, len - 1), (int) ((double) (x - 6.0f) / juce::jmax (1, getWidth() - 12) * len));
 }
 
 int WaveformView::markerNear (float x, const SliceMap& map, int len) const
@@ -104,8 +67,7 @@ int WaveformView::markerNear (float x, const SliceMap& map, int len) const
 WaveformView::Drag WaveformView::hitTestHandles (float x, const SliceMap& map, int len, int& idx) const
 {
     idx = -1;
-    const int mode = (int) proc.apvts.getRawParameterValue ("mode")->load();
-
+    const int mode = (int) raw (proc, "mode");
     if (mode == SliceDeckProcessor::modeSlice)
     {
         idx = markerNear (x, map, len);
@@ -114,9 +76,9 @@ WaveformView::Drag WaveformView::hitTestHandles (float x, const SliceMap& map, i
     if (std::abs (x - xFor (map.trimStart, len)) < 6.0f) return Drag::trimStart;
     if (std::abs (x - xFor (map.trimEnd, len)) < 6.0f)   return Drag::trimEnd;
 
-    if (mode == SliceDeckProcessor::modeClassic && proc.apvts.getRawParameterValue ("loop")->load() > 0.5f)
+    if (mode == SliceDeckProcessor::modeClassic && raw (proc, "loop") > 0.5f)
     {
-        const float lp = proc.apvts.getRawParameterValue ("loopStart")->load() * 0.01f;
+        const float lp = raw (proc, "loopStart") * 0.01f;
         const int ls = map.trimStart + (int) ((float) (map.trimEnd - map.trimStart) * lp);
         if (std::abs (x - xFor (ls, len)) < 6.0f) return Drag::loopStart;
     }
@@ -131,140 +93,133 @@ void WaveformView::setParam (const juce::String& id, float plain)
 
 void WaveformView::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
-    g.setColour (panel);
-    g.fillRoundedRectangle (bounds, 6.0f);
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour (cInset);
+    g.fillRoundedRectangle (bounds, 5.0f);
+    if (fileHover)
+    {
+        g.setColour (cTeal);
+        g.drawRoundedRectangle (bounds.reduced (1.0f), 5.0f, 2.0f);
+    }
 
     auto data = proc.getSampleData();
     auto map = proc.getSliceMap();
-
     if (data == nullptr || map == nullptr || data->peakMin.empty())
     {
-        g.setColour (proc.isSampleMissing() ? accent : dim);
-        g.setFont (16.0f);
-        g.drawText (proc.isSampleMissing() ? "Sample missing - drop the file here to relink"
-                                           : "Drop an audio file here",
-                    getLocalBounds(), juce::Justification::centred);
+        g.setColour (proc.isSampleMissing() ? cRed : cLabel);
+        g.setFont (mono (13.0f, true));
+        g.drawText (proc.isSampleMissing() ? "SAMPLE MISSING - DROP THE FILE HERE TO RELINK" : "DROP AN AUDIO FILE HERE",
+                    getLocalBounds().withTrimmedBottom (getHeight() / 2 - 2).withTrimmedTop (getHeight() / 2 - 20), juce::Justification::centred);
+        g.setFont (mono (11.0f));
+        g.drawText ("WAV  AIF  FLAC  MP3  OGG", getLocalBounds().withTrimmedTop (getHeight() / 2 + 2).withHeight (16), juce::Justification::centred);
         return;
     }
 
     const int len = data->length();
     const int w = getWidth();
-    const float mid = (float) getHeight() * 0.5f;
-    const float amp = (float) getHeight() * 0.46f;
-    const int mode = (int) proc.apvts.getRawParameterValue ("mode")->load();
+    const float mid = (float) getHeight() * 0.5f + 4.0f;
+    const float amp = (float) getHeight() * 0.40f;
+    const int mode = (int) raw (proc, "mode");
     const int bins = (int) data->peakMin.size();
+    const bool isSlice = mode == SliceDeckProcessor::modeSlice;
 
-    // slice backgrounds
-    if (mode == SliceDeckProcessor::modeSlice)
+    // selected slice
+    if (isSlice && selectedSlice < (int) map->slices.size())
     {
-        for (int i = 0; i < (int) map->slices.size(); ++i)
-        {
-            const auto& s = map->slices[(size_t) i];
-            const float x0 = xFor (s.start, len), x1 = xFor (s.end, len);
-            if (i == selectedSlice)
-            {
-                g.setColour (slice.withAlpha (0.16f));
-                g.fillRect (x0, 0.0f, x1 - x0, (float) getHeight());
-            }
-            else if (i % 2 == 1)
-            {
-                g.setColour (juce::Colours::white.withAlpha (0.025f));
-                g.fillRect (x0, 0.0f, x1 - x0, (float) getHeight());
-            }
-        }
+        const auto& s = map->slices[(size_t) selectedSlice];
+        g.setColour (cGreenL);
+        g.fillRect (xFor (s.start, len), 0.0f, xFor (s.end, len) - xFor (s.start, len), (float) getHeight());
     }
 
     // waveform
-    for (int x = 0; x < w; ++x)
+    for (int x = 6; x < w - 6; ++x)
     {
-        const int b0 = (int) ((juce::int64) x * bins / w);
-        const int b1 = juce::jmax (b0 + 1, (int) ((juce::int64) (x + 1) * bins / w));
+        const int b0 = (int) ((juce::int64) (x - 6) * bins / (w - 12));
+        const int b1 = juce::jmax (b0 + 1, (int) ((juce::int64) (x - 5) * bins / (w - 12)));
         float mn = 0.0f, mx = 0.0f;
         for (int b = b0; b < juce::jmin (b1, bins); ++b)
         {
             mn = juce::jmin (mn, data->peakMin[(size_t) b]);
             mx = juce::jmax (mx, data->peakMax[(size_t) b]);
         }
-        const int sample = (int) ((juce::int64) x * len / w);
+        const int sample = sampleAt ((float) x, len);
         const bool inside = sample >= map->trimStart && sample < map->trimEnd;
-        g.setColour (inside ? wave : wave.withAlpha (0.25f));
+        g.setColour (inside ? cText : cTrack);
         g.drawVerticalLine (x, mid - juce::jmin (1.0f, mx) * amp, mid - juce::jmax (-1.0f, mn) * amp + 1.0f);
     }
 
-    // slice markers
-    if (mode == SliceDeckProcessor::modeSlice)
+    // slice markers and note names
+    if (isSlice)
     {
-        const int first = (int) proc.apvts.getRawParameterValue ("firstNote")->load();
-        g.setFont (11.0f);
-        for (int i = 0; i < (int) map->slices.size(); ++i)
+        const int first = (int) raw (proc, "firstNote");
+        const int count = (int) map->slices.size();
+        for (int i = 0; i < count; ++i)
         {
             const float x = xFor (map->slices[(size_t) i].start, len);
-            g.setColour (slice.withAlpha (i == 0 ? 0.5f : 0.9f));
-            g.drawVerticalLine ((int) x, 0.0f, (float) getHeight());
             const float x1 = xFor (map->slices[(size_t) i].end, len);
-            if (x1 - x > 26.0f)
+            g.setColour (cBlue.withAlpha (i == 0 ? 0.5f : 1.0f));
+            g.fillRect (x, 0.0f, 1.5f, (float) getHeight());
+            if (x1 - x > 24.0f)
             {
-                g.setColour (i == selectedSlice ? slice : dim);
-                g.drawText (noteName (first + i), (int) x + 3, 3, 40, 14, juce::Justification::left);
+                g.setColour (i == selectedSlice ? cGreen : cBlue);
+                g.setFont (mono (11.0f, true));
+                g.drawText (noteName (first + i), (int) x + 4, 3, 40, 14, juce::Justification::left);
             }
         }
     }
 
-    // trim handles
-    auto drawHandle = [&] (int sample, const juce::String& label, bool leftSide)
-    {
-        const float x = xFor (sample, len);
-        g.setColour (accent);
-        g.drawVerticalLine ((int) x, 0.0f, (float) getHeight());
-        juce::Path flag;
-        const float fx = leftSide ? x : x - 14.0f;
-        flag.addRectangle (fx, (float) getHeight() - 16.0f, 14.0f, 16.0f);
-        g.fillPath (flag);
-        g.setColour (juce::Colours::black);
-        g.setFont (11.0f);
-        g.drawText (label, (int) fx, getHeight() - 16, 14, 16, juce::Justification::centred);
-    };
-    drawHandle (map->trimStart, "S", true);
-    drawHandle (map->trimEnd, "E", false);
-
-    // loop start
-    if (mode == SliceDeckProcessor::modeClassic && proc.apvts.getRawParameterValue ("loop")->load() > 0.5f)
-    {
-        const float lp = proc.apvts.getRawParameterValue ("loopStart")->load() * 0.01f;
-        const int ls = map->trimStart + (int) ((float) (map->trimEnd - map->trimStart) * lp);
-        const float x = xFor (ls, len);
-        g.setColour (slice);
-        const float dashes[] = { 4.0f, 3.0f };
-        g.drawDashedLine (juce::Line<float> (x, 0.0f, x, (float) getHeight()), dashes, 2, 1.5f);
-        g.setFont (11.0f);
-        g.drawText ("LOOP", (int) x + 3, 3, 40, 14, juce::Justification::left);
-    }
-
     // freeze position
-    if (proc.apvts.getRawParameterValue ("freeze")->load() > 0.5f)
+    if (raw (proc, "freeze") > 0.5f)
     {
-        const float fp = proc.apvts.getRawParameterValue ("freezePos")->load() * 0.01f;
+        const float fp = raw (proc, "freezePos") * 0.01f;
         int fs = map->trimStart, fe = map->trimEnd;
-        if (mode == SliceDeckProcessor::modeSlice && selectedSlice < (int) map->slices.size())
+        if (isSlice && selectedSlice < (int) map->slices.size())
         {
             fs = map->slices[(size_t) selectedSlice].start;
             fe = map->slices[(size_t) selectedSlice].end;
         }
         const float x = xFor (fs + (int) (fp * (float) (fe - fs)), len);
-        g.setColour (accent.withAlpha (0.9f));
-        const float dashes[] = { 2.0f, 2.0f };
+        g.setColour (cPurple);
+        const float dashes[] = { 3.0f, 3.0f };
         g.drawDashedLine (juce::Line<float> (x, 0.0f, x, (float) getHeight()), dashes, 2, 2.0f);
-        g.setFont (11.0f);
-        g.drawText ("FREEZE", (int) x + 3, getHeight() - 32, 50, 14, juce::Justification::left);
+        g.setFont (mono (11.0f, true));
+        g.drawText ("FREEZE", (int) x + 4, getHeight() - 34, 60, 14, juce::Justification::left);
+    }
+
+    // trim handles
+    auto drawHandle = [&] (int sample, const char* label, bool leftSide)
+    {
+        const float x = xFor (sample, len);
+        g.setColour (cOrange);
+        g.fillRect (x - 0.75f, 0.0f, 1.5f, (float) getHeight());
+        const float fx = leftSide ? x : x - 14.0f;
+        g.fillRoundedRectangle (fx, (float) getHeight() - 17.0f, 14.0f, 17.0f, 3.0f);
+        g.setColour (juce::Colours::white);
+        g.setFont (mono (11.0f, true));
+        g.drawText (label, (int) fx, getHeight() - 17, 14, 17, juce::Justification::centred);
+    };
+    drawHandle (map->trimStart, "S", true);
+    drawHandle (map->trimEnd, "E", false);
+
+    // loop start (Classic)
+    if (mode == SliceDeckProcessor::modeClassic && raw (proc, "loop") > 0.5f)
+    {
+        const float lp = raw (proc, "loopStart") * 0.01f;
+        const int ls = map->trimStart + (int) ((float) (map->trimEnd - map->trimStart) * lp);
+        const float x = xFor (ls, len);
+        g.setColour (cTeal);
+        const float dashes[] = { 4.0f, 3.0f };
+        g.drawDashedLine (juce::Line<float> (x, 0.0f, x, (float) getHeight()), dashes, 2, 1.5f);
+        g.setFont (mono (11.0f, true));
+        g.drawText ("LOOP", (int) x + 4, 3, 40, 14, juce::Justification::left);
     }
 
     // playhead
     const int ph = proc.getPlayheadSample();
     if (ph >= 0 && ph < len)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.8f));
-        g.drawVerticalLine ((int) xFor (ph, len), 0.0f, (float) getHeight());
+        g.setColour (cGreen);
+        g.fillRect (xFor (ph, len) - 1.0f, 0.0f, 2.0f, (float) getHeight());
     }
 }
 
@@ -286,7 +241,6 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     const int len = data->length();
 
     drag = hitTestHandles ((float) e.x, *map, len, dragIndex);
-
     if (drag == Drag::marker && e.mods.isPopupMenu())
     {
         proc.removeMarker (dragIndex);
@@ -305,10 +259,8 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     }
     if (drag != Drag::none) return;
 
-    // click inside: select + audition
     const int sample = sampleAt ((float) e.x, len);
-    const int mode = (int) proc.apvts.getRawParameterValue ("mode")->load();
-    if (mode == SliceDeckProcessor::modeSlice)
+    if ((int) raw (proc, "mode") == SliceDeckProcessor::modeSlice)
     {
         for (int i = 0; i < (int) map->slices.size(); ++i)
             if (sample >= map->slices[(size_t) i].start && sample < map->slices[(size_t) i].end)
@@ -363,7 +315,7 @@ void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
     auto data = proc.getSampleData();
     auto map = proc.getSliceMap();
     if (data == nullptr || map == nullptr) return;
-    if ((int) proc.apvts.getRawParameterValue ("mode")->load() != SliceDeckProcessor::modeSlice) return;
+    if ((int) raw (proc, "mode") != SliceDeckProcessor::modeSlice) return;
 
     const int len = data->length();
     const int idx = markerNear ((float) e.x, *map, len);
@@ -373,406 +325,578 @@ void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
 }
 
 //==============================================================================
+//  Editor
+//==============================================================================
 SliceDeckEditor::SliceDeckEditor (SliceDeckProcessor& p)
     : AudioProcessorEditor (&p), proc (p), waveform (p)
 {
-    setLookAndFeel (&look);
-
     addAndMakeVisible (waveform);
     waveform.onSliceSelected = [this] (int i) { selectSlice (i); };
 
-    addAndMakeVisible (loadButton);
-    loadButton.onClick = [this]
-    {
-        chooser = std::make_unique<juce::FileChooser> ("Load a sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                              [this] (const juce::FileChooser& fc)
-                              {
-                                  if (fc.getResult().existsAsFile()) loadFile (fc.getResult());
-                              });
-    };
+    auto add = [this] (const char* id, const char* label, juce::Colour c) { sliders.push_back ({ id, label, c, {}, false }); };
+    // SLICING
+    add ("mode", "MODE", cBlue);          add ("sliceBy", "SLICE BY", cBlue);
+    add ("sensitivity", "SENSITIVITY", cBlue); add ("division", "DIVISION", cBlue); add ("regions", "REGIONS", cBlue);
+    add ("firstNote", "FIRST NOTE", cBlue); add ("root", "ROOT NOTE", cBlue);
+    add ("loopStart", "LOOP START", cBlue); add ("fade", "LOOP FADE", cBlue);
+    // VOICE
+    add ("playback", "PLAYBACK", cTeal);  add ("voices", "VOICES", cTeal);
+    add ("transpose", "TRANSPOSE", cTeal); add ("detune", "DETUNE", cTeal);
+    // ENVELOPE
+    add ("attack", "ATTACK", cOrange);    add ("decay", "DECAY", cOrange);
+    add ("sustain", "SUSTAIN", cOrange);  add ("release", "RELEASE", cOrange);
+    // FILTER
+    add ("filterType", "TYPE", cPurple);  add ("cutoff", "CUTOFF", cPurple); add ("reso", "RESONANCE", cPurple);
+    // OUTPUT
+    add ("volume", "VOLUME", cGreen);     add ("pan", "PAN", cGreen);    add ("vel", "VELOCITY", cGreen);
+    // SLICE
+    add ("sliceVol", "VOLUME", cOrange);  add ("slicePitch", "PITCH", cOrange);
+    // PLAYBACK
+    add ("engine", "ENGINE", cBlue);      add ("speed", "SPEED", cBlue);
+    add ("character", "CHARACTER", cOrange); add ("charAmount", "AMOUNT", cOrange);
+    add ("freezePos", "POSITION", cPurple); add ("freezeSize", "GRAIN SIZE", cPurple);
+    add ("sampleBpm", "SAMPLE BPM", cTeal); add ("formant", "FORMANT", cTeal);
+    add ("trigBy", "TRIGGER BY", cGreen); add ("select", "SELECT", cGreen);
 
-    for (auto* l : { &nameLabel, &statusLabel, &sliceTitle })
-        addAndMakeVisible (*l);
-    nameLabel.setFont (juce::FontOptions (15.0f, juce::Font::bold));
-    statusLabel.setColour (juce::Label::textColourId, dim);
-    statusLabel.setFont (juce::FontOptions (12.5f));
-    sliceTitle.setJustificationType (juce::Justification::centred);
-    sliceTitle.setColour (juce::Label::textColourId, slice);
-
-    setupCombo (mode, "mode", "Mode");
-    setupCombo (playback, "playback", "Playback");
-    setupCombo (sliceBy, "sliceBy", "Slice By");
-    setupCombo (division, "division", "Division");
-    setupCombo (filterType, "filterType", "Type");
-
-    setupKnob (sensitivity, "sensitivity", "Sensitivity");
-    setupKnob (regions, "regions", "Regions");
-    setupKnob (voices, "voices", "Voices");
-    setupKnob (root, "root", "Root");
-    setupKnob (firstNote, "firstNote", "First Note");
-    setupKnob (loopStart, "loopStart", "Loop Start");
-    setupKnob (fade, "fade", "Loop Fade");
-    for (auto* k : { &root, &firstNote })
-    {
-        k->slider.textFromValueFunction = [] (double v) { return noteName ((int) v); };
-        k->slider.updateText();
-    }
-
-    setupKnob (attack, "attack", "Attack");
-    setupKnob (decay, "decay", "Decay");
-    setupKnob (sustain, "sustain", "Sustain");
-    setupKnob (release, "release", "Release");
-    setupKnob (vel, "vel", "Velocity");
-    setupKnob (cutoff, "cutoff", "Cutoff");
-    setupKnob (reso, "reso", "Resonance");
-    setupKnob (volume, "volume", "Volume");
-    setupKnob (pan, "pan", "Pan");
-    setupKnob (transpose, "transpose", "Transpose");
-    setupKnob (detune, "detune", "Detune");
-
-    setupToggle (loop, "loop", "Loop");
-    setupToggle (reverse, "reverse", "Reverse");
-    setupToggle (snap, "snap", "Snap");
-    setupToggle (filterOn, "filterOn", "Filter On");
-    setupToggle (embed, "embed", "Embed in project");
-
-    setupCombo (engine, "engine", "Engine");
-    setupCombo (character, "character", "Character");
-    setupCombo (trigBy, "trigBy", "Trigger Slices By");
-    setupKnob (speed, "speed", "Speed");
-    setupKnob (charAmount, "charAmount", "Amount");
-    setupKnob (freezePos, "freezePos", "Position");
-    setupKnob (freezeSize, "freezeSize", "Grain Size");
-    setupKnob (sampleBpm, "sampleBpm", "Sample BPM");
-    setupKnob (formant, "formant", "Formant");
-    setupKnob (select, "select", "Select");
-    setupToggle (freeze, "freeze", "Freeze");
-    setupToggle (sync, "sync", "Sync to tempo");
-    setupToggle (keepFormants, "keepFormants", "Keep formants");
-
-    sliceLoop.setClickingTogglesState (true);
-    addAndMakeVisible (sliceLoop);
-    sliceLoop.onClick = [this] { pushSliceSetting(); };
-
-    setupPlainKnob (sliceVol, "Slice Vol", -36.0, 12.0, 0.0, " dB");
-    setupPlainKnob (slicePitch, "Slice Pitch", -24.0, 24.0, 0.0, " st");
-    slicePitch.slider.setRange (-24.0, 24.0, 0.01);
-    sliceVol.slider.onValueChange = [this] { pushSliceSetting(); };
-    slicePitch.slider.onValueChange = [this] { pushSliceSetting(); };
-
-    proc.addChangeListener (this);
-    setSize (1060, 800);
-    changeListenerCallback (nullptr);
-    selectSlice (0);
-    updateVisibility();
+        proc.addChangeListener (this);
+    setSize (W, H);
     startTimerHz (30);
 }
 
 SliceDeckEditor::~SliceDeckEditor()
 {
     proc.removeChangeListener (this);
-    setLookAndFeel (nullptr);
-}
-
-void SliceDeckEditor::setupKnob (Knob& k, const juce::String& id, const juce::String& name)
-{
-    k.slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    k.slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 16);
-    k.slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    k.label.setText (name, juce::dontSendNotification);
-    k.label.setJustificationType (juce::Justification::centred);
-    k.label.setFont (juce::FontOptions (12.0f));
-    k.label.setColour (juce::Label::textColourId, dim);
-    addAndMakeVisible (k.slider);
-    addAndMakeVisible (k.label);
-    k.att = std::make_unique<SliderAtt> (proc.apvts, id, k.slider);
-
-    static const std::map<juce::String, juce::String> suffixes {
-        { "attack", " ms" }, { "decay", " ms" }, { "release", " ms" }, { "fade", " ms" },
-        { "sustain", " %" }, { "vel", " %" }, { "sensitivity", " %" }, { "reso", " %" }, { "loopStart", " %" },
-        { "cutoff", " Hz" }, { "volume", " dB" }, { "detune", " ct" }, { "transpose", " st" },
-        { "speed", " %" }, { "charAmount", " %" }, { "freezePos", " %" }, { "freezeSize", " ms" },
-        { "formant", " st" }, { "select", " %" }, { "sampleBpm", " BPM" } };
-    auto it = suffixes.find (id);
-    if (it != suffixes.end()) k.slider.setTextValueSuffix (it->second);
-    if (auto* p = proc.apvts.getParameter (id))
-        k.slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
-}
-
-void SliceDeckEditor::setupPlainKnob (Knob& k, const juce::String& name, double min, double max, double def, const juce::String& suffix)
-{
-    k.slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    k.slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 16);
-    k.slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    k.slider.setRange (min, max, 0.1);
-    k.slider.setValue (def, juce::dontSendNotification);
-    k.slider.setDoubleClickReturnValue (true, def);
-    k.slider.setTextValueSuffix (suffix);
-    k.label.setText (name, juce::dontSendNotification);
-    k.label.setJustificationType (juce::Justification::centred);
-    k.label.setFont (juce::FontOptions (12.0f));
-    k.label.setColour (juce::Label::textColourId, dim);
-    addAndMakeVisible (k.slider);
-    addAndMakeVisible (k.label);
-}
-
-void SliceDeckEditor::setupCombo (Combo& c, const juce::String& id, const juce::String& name)
-{
-    if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (id)))
-        c.box.addItemList (p->choices, 1);
-    c.label.setText (name, juce::dontSendNotification);
-    c.label.setFont (juce::FontOptions (12.0f));
-    c.label.setColour (juce::Label::textColourId, dim);
-    addAndMakeVisible (c.box);
-    addAndMakeVisible (c.label);
-    c.att = std::make_unique<ComboAtt> (proc.apvts, id, c.box);
-}
-
-void SliceDeckEditor::setupToggle (Toggle& t, const juce::String& id, const juce::String& name)
-{
-    t.button.setButtonText (name);
-    t.button.setClickingTogglesState (true);
-    addAndMakeVisible (t.button);
-    t.att = std::make_unique<ButtonAtt> (proc.apvts, id, t.button);
-}
-
-void SliceDeckEditor::placeKnob (Knob& k, juce::Rectangle<int> a)
-{
-    k.label.setBounds (a.removeFromTop (16));
-    k.slider.setBounds (a);
-}
-
-void SliceDeckEditor::placeCombo (Combo& c, juce::Rectangle<int> a)
-{
-    c.label.setBounds (a.removeFromTop (16));
-    c.box.setBounds (a.removeFromTop (24));
-}
-
-//==============================================================================
-void SliceDeckEditor::paint (juce::Graphics& g)
-{
-    g.fillAll (bg);
-
-    g.setColour (accent);
-    g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
-    g.drawText ("SLICEDECK", 16, 10, 140, 26, juce::Justification::left);
-
-    auto drawBox = [&] (juce::Rectangle<int> r, const juce::String& title)
-    {
-        g.setColour (panel);
-        g.fillRoundedRectangle (r.toFloat(), 6.0f);
-        g.setColour (dim);
-        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.drawText (title, r.getX() + 10, r.getY() + 4, 200, 16, juce::Justification::left);
-    };
-    drawBox (sampleBox, "SAMPLE");
-    drawBox (sliceBox, "SELECTED SLICE");
-    drawBox (playBox, "PLAYBACK");
-    drawBox (ampBox, "AMP ENVELOPE");
-    drawBox (filterBox, "FILTER");
-    drawBox (globalBox, "GLOBAL");
 }
 
 void SliceDeckEditor::resized()
 {
-    const int W = getWidth();
-    loadButton.setBounds (160, 11, 70, 26);
-    nameLabel.setBounds (240, 11, 500, 26);
-    embed.button.setBounds (W - 166, 11, 150, 26);
-    statusLabel.setBounds (16, 42, W - 32, 20);
-    waveform.setBounds (16, 66, W - 32, 220);
+    using R = juce::Rectangle<float>;
+    const float y1 = G, h1 = 64.0f;
+    const float y2 = y1 + h1 + G, h2 = 250.0f;
+    const float y3 = y2 + h2 + G, h3 = 104.0f;
+    const float y4 = y3 + h3 + G, h4 = H - y4 - G;
 
-    const int kw = 68, kh = 112;
-    sampleBox = { 16, 298, 720, 160 };
-    sliceBox  = { sampleBox.getRight() + 10, 298, W - 16 - (sampleBox.getRight() + 10), 160 };
-    playBox   = { 16, 468, W - 32, 156 };
-    ampBox    = { 16, 634, kw * 5 + 20, 156 };
-    filterBox = { ampBox.getRight() + 10, 634, 128 + kw * 2, 156 };
-    globalBox = { filterBox.getRight() + 10, 634, W - 16 - (filterBox.getRight() + 10), 156 };
+    // row 1
+    const float tW = 230.0f;
+    pTitle = R (G, y1, tW, h1);
+    pFile  = R (pTitle.getRight() + G, y1, W - 3 * G - tW, h1);
+    const float by = y1 + 28.0f, bh = 26.0f;
+    bLoad    = R (pFile.getX() + 12, by, 74, bh);
+    bArrange = R (bLoad.getRight() + 8, by, 150, bh);
+    bEmbed   = R (bArrange.getRight() + 8, by, 128, bh);
 
-    // SAMPLE box
+    // row 2: waveform
+    pWave = R (G, y2, W - 2 * G, h2);
+    bLoop    = R (pWave.getRight() - 32 - 62, y2 + 7, 62, 17);
+    bSnap    = R (bLoop.getX() - 6 - 62, y2 + 7, 62, 17);
+    bReverse = R (bSnap.getX() - 6 - 78, y2 + 7, 78, 17);
+    waveform.setBounds (R (pWave.getX() + 12, y2 + 30, pWave.getWidth() - 24, h2 - 42).toNearestInt());
+
+    // row 3: playback, five panels
     {
-        auto r = sampleBox.reduced (10).withTrimmedTop (16);
-        auto combos = r.removeFromLeft (270);
-        auto row1 = combos.removeFromTop (44);
-        placeCombo (mode, row1.removeFromLeft (130));
-        row1.removeFromLeft (10);
-        placeCombo (sliceBy, row1.removeFromLeft (130));
-        combos.removeFromTop (4);
-        auto row2 = combos.removeFromTop (44);
-        placeCombo (playback, row2.removeFromLeft (130));
-        row2.removeFromLeft (10);
-        placeCombo (division, row2.removeFromLeft (130));
-        combos.removeFromTop (12);
-        auto row3 = combos.removeFromTop (26);
-        loop.button.setBounds (row3.removeFromLeft (80));
-        row3.removeFromLeft (8);
-        reverse.button.setBounds (row3.removeFromLeft (80));
-        row3.removeFromLeft (8);
-        snap.button.setBounds (row3.removeFromLeft (80));
-
-        r.removeFromLeft (14);
-        auto slot = [&] { auto s = r.removeFromLeft (kw).withHeight (kh); r.removeFromLeft (10); return s; };
-        auto s1 = slot(); placeKnob (sensitivity, s1); placeKnob (regions, s1);
-        auto s2 = slot(); placeKnob (voices, s2);
-        auto s3 = slot(); placeKnob (root, s3); placeKnob (firstNote, s3);
-        auto s4 = slot(); placeKnob (loopStart, s4);
-        auto s5 = slot(); placeKnob (fade, s5);
+        const float widths[] = { 190.0f, 190.0f, 200.0f, 270.0f, 0.0f };
+        float x3 = G;
+        int i3 = 0;
+        for (auto* pnl : { &pEngine, &pChar, &pFreeze, &pStretch, &pTrigger })
+        {
+            const float w3 = pnl == &pTrigger ? W - G - x3 : widths[i3];
+            *pnl = R (x3, y3, w3, h3);
+            x3 += w3 + G;
+            ++i3;
+        }
+        bFreeze   = R (pFreeze.getRight() - 32 - 44, y3 + 7, 44, 17);
+        bSync     = R (pStretch.getRight() - 32 - 50, y3 + 7, 50, 17);
+        bFormants = R (bSync.getX() - 6 - 110, y3 + 7, 110, 17);
     }
 
-    // SELECTED SLICE box
+    // row 4: six panels
+    const float pw = std::floor ((W - 7 * G) / 6.0f);
+    float x = G;
+    for (auto* pnl : { &pSlicing, &pVoice, &pEnv, &pFilter, &pOut, &pSlice })
     {
-        auto r = sliceBox.reduced (10).withTrimmedTop (16);
-        sliceTitle.setBounds (r.removeFromTop (20));
-        r.removeFromTop (4);
-        auto right = r.removeFromRight (100);
-        sliceLoop.setBounds (right.withSizeKeepingCentre (96, 26));
-        placeKnob (sliceVol, r.removeFromLeft (r.getWidth() / 2).withHeight (kh - 10));
-        placeKnob (slicePitch, r.withHeight (kh - 10));
+        *pnl = R (x, y4, pnl == &pSlice ? W - G - x : pw, h4);
+        x += pw + G;
     }
+    bFilterOn  = R (pFilter.getRight() - 32 - 44, y4 + 7, 44, 17);
+    bSliceLoop = R (pSlice.getRight() - 32 - 46, y4 + 7, 46, 17);
 
-    // PLAYBACK box
+    layoutKey.clear();
+    layoutSliders();
+}
+
+// Which sliders are visible depends on the mode, so the layout is refreshed whenever that changes.
+void SliceDeckEditor::layoutSliders()
+{
+    const int mode = (int) raw (proc, "mode");
+    const int by = (int) raw (proc, "sliceBy");
+    const bool loop = raw (proc, "loop") > 0.5f;
+    auto sm = proc.getSliceMap();
+    const bool hasSlices = sm != nullptr && ! sm->slices.empty();
+    const int eng = (int) raw (proc, "engine");
+    const int chr = (int) raw (proc, "character");
+    const int trg = (int) raw (proc, "trigBy");
+    const auto key = juce::String (mode) + "/" + juce::String (by) + "/" + juce::String ((int) loop) + "/" + juce::String ((int) hasSlices)
+                   + "/" + juce::String (eng) + "/" + juce::String (chr) + "/" + juce::String (trg);
+    if (key == layoutKey) return;
+    layoutKey = key;
+
+    const bool isSlice = mode == SliceDeckProcessor::modeSlice;
+    const bool isClassic = mode == SliceDeckProcessor::modeClassic;
+
+    std::vector<juce::String> slicing { "mode" };
+    if (isSlice)
     {
-        auto r = playBox.reduced (10).withTrimmedTop (18);
-        auto colA = r.removeFromLeft (130);
-        placeCombo (engine, colA.removeFromTop (44));
-        colA.removeFromTop (6);
-        placeCombo (character, colA.removeFromTop (44));
-        r.removeFromLeft (12);
-        placeKnob (speed, r.removeFromLeft (kw).withHeight (kh));       r.removeFromLeft (8);
-        placeKnob (charAmount, r.removeFromLeft (kw).withHeight (kh));  r.removeFromLeft (20);
-
-        auto colB = r.removeFromLeft (90);
-        freeze.button.setBounds (colB.removeFromTop (60).withSizeKeepingCentre (86, 26));
-        placeKnob (freezePos, r.removeFromLeft (kw).withHeight (kh));   r.removeFromLeft (8);
-        placeKnob (freezeSize, r.removeFromLeft (kw).withHeight (kh));  r.removeFromLeft (20);
-
-        auto colC = r.removeFromLeft (120);
-        sync.button.setBounds (colC.removeFromTop (30).withSizeKeepingCentre (116, 26));
-        colC.removeFromTop (8);
-        keepFormants.button.setBounds (colC.removeFromTop (30).withSizeKeepingCentre (116, 26));
-        r.removeFromLeft (8);
-        placeKnob (sampleBpm, r.removeFromLeft (kw).withHeight (kh));   r.removeFromLeft (8);
-        placeKnob (formant, r.removeFromLeft (kw).withHeight (kh));     r.removeFromLeft (20);
-
-        auto colD = r.removeFromLeft (130);
-        placeCombo (trigBy, colD.removeFromTop (44));
-        r.removeFromLeft (8);
-        placeKnob (select, r.removeFromLeft (kw).withHeight (kh));
+        slicing.push_back ("sliceBy");
+        if (by == SliceDeckProcessor::byTransient) slicing.push_back ("sensitivity");
+        if (by == SliceDeckProcessor::byBeat)      slicing.push_back ("division");
+        if (by == SliceDeckProcessor::byRegion)    slicing.push_back ("regions");
+        slicing.push_back ("firstNote");
     }
-
-    auto knobRow = [&] (juce::Rectangle<int> box, std::initializer_list<Knob*> knobs)
+    else
     {
-        auto r = box.reduced (10).withTrimmedTop (18);
-        for (auto* k : knobs) placeKnob (*k, r.removeFromLeft (kw).withHeight (kh));
-    };
-    knobRow (ampBox, { &attack, &decay, &sustain, &release, &vel });
-
-    {
-        auto r = filterBox.reduced (10).withTrimmedTop (18);
-        auto left = r.removeFromLeft (100);
-        filterOn.button.setBounds (left.removeFromTop (26));
-        left.removeFromTop (10);
-        placeCombo (filterType, left);
-        r.removeFromLeft (8);
-        placeKnob (cutoff, r.removeFromLeft (kw).withHeight (kh));
-        placeKnob (reso, r.removeFromLeft (kw).withHeight (kh));
+        slicing.push_back ("root");
+        if (isClassic && loop) { slicing.push_back ("loopStart"); slicing.push_back ("fade"); }
     }
+    std::vector<juce::String> voice;
+    if (! isClassic) voice.push_back ("playback");
+    if (mode != SliceDeckProcessor::modeOneShot) voice.push_back ("voices");
+    voice.push_back ("transpose"); voice.push_back ("detune");
 
-    knobRow (globalBox, { &volume, &pan, &transpose, &detune });
-}
+    const std::vector<std::pair<juce::Rectangle<float>, std::vector<juce::String>>> panels {
+        { pSlicing, slicing },
+        { pVoice, voice },
+        { pEnv, { "attack", "decay", "sustain", "release" } },
+        { pFilter, { "filterType", "cutoff", "reso" } },
+        { pOut, { "volume", "pan", "vel" } },
+        { pSlice, isSlice && hasSlices ? std::vector<juce::String> { "sliceVol", "slicePitch" } : std::vector<juce::String>() },
+        { pEngine, { "engine", "speed" } },
+        { pChar, chr != 0 ? std::vector<juce::String> { "character", "charAmount" } : std::vector<juce::String> { "character" } },
+        { pFreeze, { "freezePos", "freezeSize" } },
+        { pStretch, eng == SliceDeckProcessor::engineStretch ? std::vector<juce::String> { "sampleBpm", "formant" } : std::vector<juce::String>() },
+        { pTrigger, ! isSlice ? std::vector<juce::String>()
+                              : trg == SliceDeckProcessor::trigSelect ? std::vector<juce::String> { "trigBy", "select" }
+                                                                      : std::vector<juce::String> { "trigBy" } } };
 
-//==============================================================================
-void SliceDeckEditor::updateVisibility()
-{
-    auto raw = [this] (const char* id) { return proc.apvts.getRawParameterValue (id)->load(); };
-    const int m = (int) raw ("mode");
-    const int by = (int) raw ("sliceBy");
-    const bool lp = raw ("loop") > 0.5f;
-    const int eng = (int) raw ("engine");
-    const int ch = (int) raw ("character");
-    const int tb = (int) raw ("trigBy");
-    const bool fz = raw ("freeze") > 0.5f;
-    if (m == lastMode && by == lastSliceBy && lp == lastLoop && eng == lastEngine
-        && ch == lastChar && tb == lastTrig && fz == lastFreeze) return;
-    lastMode = m; lastSliceBy = by; lastLoop = lp; lastEngine = eng; lastChar = ch; lastTrig = tb; lastFreeze = fz;
+    for (auto& s : sliders) s.visible = false;
+    for (auto& [panel, ids] : panels)
+        for (size_t row = 0; row < ids.size(); ++row)
+            for (auto& s : sliders)
+                if (s.id == ids[row])
+                {
+                    s.visible = true;
+                    s.rect = { panel.getX() + 14, panel.getY() + 30 + (float) row * 32.0f, panel.getWidth() - 28, 30 };
+                }
 
-    const bool isSlice = m == SliceDeckProcessor::modeSlice;
-    const bool isClassic = m == SliceDeckProcessor::modeClassic;
-    const bool isStretch = eng == SliceDeckProcessor::engineStretch;
-
-    auto show = [] (bool v, std::initializer_list<juce::Component*> comps) { for (auto* c : comps) c->setVisible (v); };
-    show (! isClassic, { &playback.box, &playback.label });
-    show (isSlice, { &sliceBy.box, &sliceBy.label, &firstNote.slider, &firstNote.label,
-                     &sliceVol.slider, &sliceVol.label, &slicePitch.slider, &slicePitch.label, &sliceLoop,
-                     &trigBy.box, &trigBy.label });
-    show (isSlice && tb == SliceDeckProcessor::trigSelect, { &select.slider, &select.label });
-    show (! isSlice, { &root.slider, &root.label });
-    show (isSlice && by == SliceDeckProcessor::byTransient, { &sensitivity.slider, &sensitivity.label });
-    show (isSlice && by == SliceDeckProcessor::byRegion, { &regions.slider, &regions.label });
-    show (isSlice && by == SliceDeckProcessor::byBeat, { &division.box, &division.label });
-    show (m != SliceDeckProcessor::modeOneShot, { &voices.slider, &voices.label });
-    show (isClassic, { &loop.button });
-    show (isClassic && lp, { &loopStart.slider, &loopStart.label, &fade.slider, &fade.label });
-    show (ch != 0, { &charAmount.slider, &charAmount.label });
-    show (fz, { &freezePos.slider, &freezePos.label, &freezeSize.slider, &freezeSize.label });
-    show (isStretch, { &sync.button, &keepFormants.button, &sampleBpm.slider, &sampleBpm.label,
-                       &formant.slider, &formant.label });
-
-    if (! isSlice) sliceTitle.setText ("Slice mode only", juce::dontSendNotification);
-    else selectSlice (waveform.selectedSlice);
-    waveform.repaint();
-}
-
-void SliceDeckEditor::pushSliceSetting()
-{
-    SliceSetting s;
-    s.gainDb = (float) sliceVol.slider.getValue();
-    s.pitch = (float) slicePitch.slider.getValue();
-    s.loop = sliceLoop.getToggleState();
-    proc.setSliceSetting (waveform.selectedSlice, s);
-}
-
-void SliceDeckEditor::selectSlice (int index)
-{
-    auto map = proc.getSliceMap();
-    const int count = map != nullptr ? (int) map->slices.size() : 0;
-    index = juce::jlimit (0, juce::jmax (0, count - 1), index);
-    waveform.selectedSlice = index;
-
-    const auto s = proc.getSliceSetting (index);
-    sliceVol.slider.setValue (s.gainDb, juce::dontSendNotification);
-    slicePitch.slider.setValue (s.pitch, juce::dontSendNotification);
-    sliceLoop.setToggleState (s.loop, juce::dontSendNotification);
-
-    const int first = (int) proc.apvts.getRawParameterValue ("firstNote")->load();
-    sliceTitle.setText (count > 0 ? "Slice " + juce::String (index + 1) + " of " + juce::String (count)
-                                        + "  -  " + noteName (first + index)
-                                  : "No slices",
-                        juce::dontSendNotification);
-}
-
-void SliceDeckEditor::changeListenerCallback (juce::ChangeBroadcaster*)
-{
-    nameLabel.setText (proc.getSampleName(), juce::dontSendNotification);
-    statusLabel.setText (proc.getStatusText(), juce::dontSendNotification);
-    statusLabel.setColour (juce::Label::textColourId, proc.isSampleMissing() ? accent : dim);
-    if (lastMode == SliceDeckProcessor::modeSlice) selectSlice (waveform.selectedSlice);
-    waveform.repaint();
 }
 
 void SliceDeckEditor::timerCallback()
 {
-    updateVisibility();
+    layoutSliders();
+    repaint();
     waveform.repaint();
+}
 
-    if (++tickCount % 15 == 0)
+//==============================================================================
+float SliceDeckEditor::sliderNorm (const SliderDef& d) const
+{
+    if (d.id == "sliceVol")   return juce::jmap (proc.getSliceSetting (selectedSlice).gainDb, -36.0f, 12.0f, 0.0f, 1.0f);
+    if (d.id == "slicePitch") return juce::jmap (proc.getSliceSetting (selectedSlice).pitch, -24.0f, 24.0f, 0.0f, 1.0f);
+    if (auto* p = proc.apvts.getParameter (d.id)) return p->getValue();
+    return 0.0f;
+}
+
+void SliceDeckEditor::setSliderNorm (const SliderDef& d, float norm)
+{
+    norm = juce::jlimit (0.0f, 1.0f, norm);
+    if (isSliceSlider (d))
     {
-        statusLabel.setText (proc.getStatusText(), juce::dontSendNotification);
-        nameLabel.setText (proc.getSampleName(), juce::dontSendNotification);
-        statusLabel.setColour (juce::Label::textColourId, proc.isSampleMissing() ? accent : dim);
+        auto s = proc.getSliceSetting (selectedSlice);
+        if (d.id == "sliceVol") s.gainDb = std::round (juce::jmap (norm, -36.0f, 12.0f) * 10.0f) / 10.0f;
+        else                    s.pitch  = std::round (juce::jmap (norm, -24.0f, 24.0f) * 10.0f) / 10.0f;
+        proc.setSliceSetting (selectedSlice, s);
+        return;
     }
+    if (auto* p = proc.apvts.getParameter (d.id))
+    {
+        const float snapped = p->convertTo0to1 (p->convertFrom0to1 (norm));
+        if (std::abs (snapped - p->getValue()) > 1.0e-6f) p->setValueNotifyingHost (snapped);
+    }
+}
+
+void SliceDeckEditor::nudgeSlider (const SliderDef& d, float dir, bool fine)
+{
+    if (isSliceSlider (d))
+    {
+        auto s = proc.getSliceSetting (selectedSlice);
+        if (d.id == "sliceVol") s.gainDb = juce::jlimit (-36.0f, 12.0f, s.gainDb + dir * (fine ? 0.1f : 0.5f));
+        else                    s.pitch  = juce::jlimit (-24.0f, 24.0f, s.pitch + dir * (fine ? 0.1f : 1.0f));
+        proc.setSliceSetting (selectedSlice, s);
+        return;
+    }
+    auto* p = proc.apvts.getParameter (d.id);
+    if (p == nullptr) return;
+    const auto& range = p->getNormalisableRange();
+    const bool stepped = dynamic_cast<juce::AudioParameterChoice*> (p) != nullptr || dynamic_cast<juce::AudioParameterInt*> (p) != nullptr;
+    if (stepped)
+    {
+        const float v = range.convertFrom0to1 (p->getValue()) + dir;
+        p->setValueNotifyingHost (range.convertTo0to1 (juce::jlimit (range.start, range.end, v)));
+    }
+    else
+    {
+        setSliderNorm (d, p->getValue() + dir * (fine ? 0.0025f : 0.01f));
+    }
+}
+
+void SliceDeckEditor::resetSlider (const SliderDef& d)
+{
+    if (isSliceSlider (d))
+    {
+        auto s = proc.getSliceSetting (selectedSlice);
+        if (d.id == "sliceVol") s.gainDb = 0.0f; else s.pitch = 0.0f;
+        proc.setSliceSetting (selectedSlice, s);
+        return;
+    }
+    if (auto* p = proc.apvts.getParameter (d.id))
+        p->setValueNotifyingHost (p->getDefaultValue());
+}
+
+juce::String SliceDeckEditor::sliderText (const SliderDef& d) const
+{
+    auto sign = [] (float v, int dec) { return (v > 0.0f ? "+" : "") + juce::String (v, dec); };
+    if (d.id == "sliceVol")   return sign (proc.getSliceSetting (selectedSlice).gainDb, 1) + " dB";
+    if (d.id == "slicePitch") return sign (proc.getSliceSetting (selectedSlice).pitch, 1) + " st";
+
+    auto* p = proc.apvts.getParameter (d.id);
+    if (p == nullptr) return {};
+    if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p)) return c->getCurrentChoiceName().toUpperCase();
+    const float v = p->convertFrom0to1 (p->getValue());
+    const juce::String id = d.id;
+
+    if (id == "firstNote" || id == "root") return noteName ((int) v);
+    if (id == "voices" || id == "regions") return juce::String ((int) v);
+    if (id == "freezeSize") return juce::String (v, v < 10.0f ? 1 : 0) + " ms";
+    if (id == "sampleBpm") return juce::String (v, 1);
+    if (id == "formant") return sign (v, 1) + " st";
+    if (id == "speed") return juce::String ((int) std::round (v)) + "%";
+    if (id == "attack" || id == "decay" || id == "release" || id == "fade")
+        return v >= 1000.0f ? juce::String (v / 1000.0f, 2) + " s" : juce::String (v, v < 10.0f ? 1 : 0) + " ms";
+    if (id == "cutoff") return v >= 1000.0f ? juce::String (v / 1000.0f, 1) + " kHz" : juce::String ((int) v) + " Hz";
+    if (id == "volume") return sign (v, 1) + " dB";
+    if (id == "pan") return std::abs (v) < 0.5f ? juce::String ("C") : (v < 0 ? "L" : "R") + juce::String ((int) std::round (std::abs (v)));
+    if (id == "transpose") return sign ((float) (int) v, 0) + " st";
+    if (id == "detune") return sign (v, 0) + " ct";
+    return juce::String ((int) std::round (v)) + "%";
+}
+
+//==============================================================================
+void SliceDeckEditor::drawPanel (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title, juce::Colour dot) const
+{
+    g.setColour (cPanel);
+    g.fillRoundedRectangle (r, 7.0f);
+    g.setColour (cLabel);
+    g.setFont (mono (12.0f));
+    g.drawText (title, r.getX() + 12, r.getY() + 8, r.getWidth() - 40, 14, juce::Justification::centredLeft);
+    g.setColour (dot);
+    g.fillEllipse (r.getRight() - 19, r.getY() + 11, 8, 8);
+}
+
+void SliceDeckEditor::drawPill (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text,
+                                juce::Colour fill, juce::Colour textCol, float fontSize) const
+{
+    g.setColour (fill);
+    g.fillRoundedRectangle (r, r.getHeight() / 2.0f);
+    g.setColour (textCol);
+    g.setFont (mono (fontSize, true));
+    g.drawText (text, r, juce::Justification::centred);
+}
+
+void SliceDeckEditor::drawToggle (juce::Graphics& g, Kind k, const juce::String& text, bool on, juce::Colour onCol, float fontSize) const
+{
+    const bool hov = hover.kind == k && active.kind == None;
+    drawPill (g, buttonRect (k), text, on ? (hov ? onCol.darker (0.15f) : onCol) : (hov ? cInset2 : cInset),
+              on ? juce::Colours::white : cLabel, fontSize);
+}
+
+void SliceDeckEditor::drawSlider (juce::Graphics& g, const SliderDef& d, int index) const
+{
+    const auto r = d.rect;
+    g.setFont (mono (12.0f));
+    g.setColour (cLabel);
+    g.drawText (d.label, r.getX(), r.getY(), r.getWidth() * 0.6f, 15, juce::Justification::centredLeft);
+    g.setFont (mono (13.0f, true));
+    g.setColour (cText);
+    g.drawText (sliderText (d), r.getX() + r.getWidth() * 0.3f, r.getY(), r.getWidth() * 0.7f, 15, juce::Justification::centredRight);
+
+    const float t = sliderNorm (d);
+    float t0 = 0.0f;
+    if (d.id == "pan" || d.id == "transpose" || d.id == "detune" || d.id == "slicePitch" || d.id == "speed" || d.id == "formant") t0 = 0.5f;
+    if (d.id == "sliceVol") t0 = 0.75f;
+    g.setColour (cTrack);
+    g.fillRect (r.getX(), r.getY() + 21, r.getWidth(), 2.0f);
+    g.setColour (d.colour);
+    g.fillRect (r.getX() + std::min (t, t0) * r.getWidth(), r.getY() + 21, std::abs (t - t0) * r.getWidth(), 2.0f);
+    const bool isActive = active.kind == Slider && active.index == index;
+    g.setColour (isActive ? cText : d.colour);
+    g.fillRect (r.getX() + t * r.getWidth() - 1.5f, r.getY() + 16, 3.0f, 12.0f);
+}
+
+void SliceDeckEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (cBg);
+    const bool embed = raw (proc, "embed") > 0.5f;
+    const int mode = (int) raw (proc, "mode");
+    const bool isSlice = mode == SliceDeckProcessor::modeSlice;
+    auto data = proc.getSampleData();
+    auto map = proc.getSliceMap();
+    const bool hasSmp = data != nullptr;
+    const int numSlices = map != nullptr ? (int) map->slices.size() : 0;
+    auto hov = [this] (Kind k) { return hover.kind == k && active.kind == None; };
+
+    // ---- title ----
+    g.setColour (cPanel);
+    g.fillRoundedRectangle (pTitle, 7.0f);
+    g.setFont (mono (25.0f, true));
+    g.setColour (cText);
+    g.drawText ("SLICE", pTitle.getX() + 14, pTitle.getY() + 9, 80, 28, juce::Justification::centredLeft);
+    g.setColour (cOrange);
+    g.drawText ("DECK", pTitle.getX() + 14 + 69, pTitle.getY() + 9, 70, 28, juce::Justification::centredLeft);
+    g.setFont (mono (11.0f));
+    g.setColour (cLabel);
+    g.drawText ("SLICE SAMPLER", pTitle.getX() + 15, pTitle.getY() + 41, pTitle.getWidth() - 20, 14, juce::Justification::centredLeft);
+
+    juce::String st; juce::Colour stc;
+    if (nowSeconds() - messageTime < 4.0)                             { st = message;        stc = cRed; }
+    else if (proc.isSampleMissing())                                  { st = "FILE MISSING"; stc = cRed; }
+    else if (! hasSmp)                                                { st = "NO SAMPLE";    stc = cOrange; }
+    else if (raw (proc, "freeze") > 0.5f)                             { st = "FROZEN";       stc = cPurple; }
+    else                                                              { st = "READY";        stc = cLabel; }
+    {
+        const float w = st.length() * 6.4f + 18.0f;
+        drawPill (g, { pTitle.getRight() - 12 - w, pTitle.getY() + 10, w, 18 }, st, stc, juce::Colours::white, 11.0f);
+    }
+
+    // ---- sample file ----
+    drawPanel (g, pFile, "SAMPLE FILE", cTeal);
+    drawPill (g, bLoad, "LOAD", hov (BtnLoad) ? cTealHov : cTeal, juce::Colours::white);
+    drawPill (g, bArrange, "FROM ARRANGE", ! proc.isInReaper() ? cInset : (hov (BtnArrange) ? cTealHov : cTeal),
+              proc.isInReaper() ? juce::Colours::white : cLabel, 12.0f);
+    drawToggle (g, BtnEmbed, embed ? "EMBEDDED" : "EMBED IN PROJECT", embed, cTeal, 11.0f);
+    {
+        const auto area = juce::Rectangle<float> (bEmbed.getRight() + 12, bEmbed.getY(), pFile.getRight() - 12 - bEmbed.getRight() - 12, bEmbed.getHeight());
+        g.setFont (mono (13.0f, true));
+        g.setColour (proc.isSampleMissing() ? cRed : cText);
+        auto name = proc.getSampleName();
+        if (name.isEmpty()) name = "-";
+        g.drawText (name, area.withHeight (14), juce::Justification::centredLeft, true);
+        g.setFont (mono (11.0f));
+        g.setColour (cLabel);
+        g.drawText (proc.getStatusText().toUpperCase(), area.withTrimmedTop (14), juce::Justification::centredLeft, true);
+    }
+
+    // ---- waveform ----
+    {
+        juce::String title = "SAMPLE";
+        if (hasSmp && isSlice) title << "  /  " << numSlices << " SLICES";
+        if (hasSmp && isSlice) title << "    CLICK = PLAY   DOUBLE-CLICK = ADD/REMOVE MARKER   DRAG MARKERS + S/E";
+        drawPanel (g, pWave, title, cBlue);
+        drawToggle (g, BtnReverse, "REVERSE", raw (proc, "reverse") > 0.5f, cBlue);
+        drawToggle (g, BtnSnap, "SNAP", raw (proc, "snap") > 0.5f, cBlue);
+        if (mode == SliceDeckProcessor::modeClassic)
+            drawToggle (g, BtnLoop, "LOOP", raw (proc, "loop") > 0.5f, cBlue);
+    }
+
+    // ---- playback ----
+    {
+        const bool stretch = (int) raw (proc, "engine") == SliceDeckProcessor::engineStretch;
+        drawPanel (g, pEngine, "ENGINE", cBlue);
+        drawPanel (g, pChar, "CHARACTER", cOrange);
+        drawPanel (g, pFreeze, "FREEZE", cPurple);
+        drawToggle (g, BtnFreeze, "ON", raw (proc, "freeze") > 0.5f, cPurple);
+        drawPanel (g, pStretch, "STRETCH", cTeal);
+        g.setFont (mono (11.0f));
+        g.setColour (cLabel);
+        if (stretch)
+        {
+            drawToggle (g, BtnSync, "SYNC", raw (proc, "sync") > 0.5f, cTeal);
+            drawToggle (g, BtnFormants, "KEEP FORMANTS", raw (proc, "keepFormants") > 0.5f, cTeal);
+        }
+        else
+            g.drawText ("STRETCH ENGINE ONLY", pStretch.withTrimmedTop (30).reduced (12, 0).withHeight (14), juce::Justification::centredLeft);
+        drawPanel (g, pTrigger, "TRIGGER SLICES", cGreen);
+        if (! isSlice)
+        {
+            g.setColour (cLabel);
+            g.drawText ("SLICE MODE ONLY", pTrigger.withTrimmedTop (30).reduced (12, 0).withHeight (14), juce::Justification::centredLeft);
+        }
+    }
+
+    // ---- bottom panels ----
+    drawPanel (g, pSlicing, "SLICING", cBlue);
+    drawPanel (g, pVoice, "VOICE", cTeal);
+    drawPanel (g, pEnv, "ENVELOPE", cOrange);
+    drawPanel (g, pFilter, "FILTER", cPurple);
+    drawToggle (g, BtnFilterOn, "ON", raw (proc, "filterOn") > 0.5f, cPurple);
+    drawPanel (g, pOut, "OUTPUT", cGreen);
+    if (isSlice && numSlices > 0)
+    {
+        drawPanel (g, pSlice, "SLICE " + juce::String (selectedSlice + 1) + "/" + juce::String (numSlices), cOrange);
+        drawToggle (g, BtnSliceLoop, "LOOP", proc.getSliceSetting (selectedSlice).loop, cOrange);
+    }
+    else
+    {
+        drawPanel (g, pSlice, "SLICE", cOrange);
+        g.setColour (cLabel);
+        g.setFont (mono (11.0f));
+        g.drawText (isSlice ? "NO SLICES YET" : "SLICE MODE ONLY", pSlice.withTrimmedTop (30).reduced (12, 0).withHeight (14),
+                    juce::Justification::centredLeft);
+    }
+
+    for (int i = 0; i < (int) sliders.size(); ++i)
+        if (sliders[(size_t) i].visible) drawSlider (g, sliders[(size_t) i], i);
+}
+
+//==============================================================================
+juce::Rectangle<float> SliceDeckEditor::buttonRect (Kind k) const
+{
+    switch (k)
+    {
+        case BtnLoad: return bLoad;         case BtnEmbed: return bEmbed;     case BtnArrange: return bArrange;
+        case BtnReverse: return bReverse;   case BtnSnap: return bSnap;
+        case BtnLoop: return (int) raw (proc, "mode") == SliceDeckProcessor::modeClassic ? bLoop : juce::Rectangle<float>();
+        case BtnFreeze: return bFreeze;
+        case BtnSync: case BtnFormants:
+            if ((int) raw (proc, "engine") != SliceDeckProcessor::engineStretch) return {};
+            return k == BtnSync ? bSync : bFormants;
+        case BtnSliceLoop:
+        {
+            auto m = proc.getSliceMap();
+            return (int) raw (proc, "mode") == SliceDeckProcessor::modeSlice && m != nullptr && ! m->slices.empty() ? bSliceLoop : juce::Rectangle<float>();
+        }
+        case BtnFilterOn: return bFilterOn;
+        case None: case Slider: default: return {};
+    }
+}
+
+SliceDeckEditor::Target SliceDeckEditor::findTarget (juce::Point<float> p) const
+{
+    for (auto k : { BtnLoad, BtnArrange, BtnEmbed, BtnReverse, BtnSnap, BtnLoop, BtnFreeze, BtnSync, BtnFormants, BtnSliceLoop, BtnFilterOn })
+        if (buttonRect (k).contains (p)) return { k, -1 };
+    for (int i = 0; i < (int) sliders.size(); ++i)
+        if (sliders[(size_t) i].visible && sliders[(size_t) i].rect.expanded (0, 2).contains (p)) return { Slider, i };
+    return {};
+}
+
+void SliceDeckEditor::mouseMove (const juce::MouseEvent& e)
+{
+    hover = findTarget (e.position);
+    repaint();
+}
+
+void SliceDeckEditor::mouseExit (const juce::MouseEvent&)
+{
+    hover = {};
+    repaint();
+}
+
+void SliceDeckEditor::mouseDown (const juce::MouseEvent& e)
+{
+    const auto t = findTarget (e.position);
+    active = t;
+    auto toggle = [this] (const char* id) { proc.setParamValue (id, raw (proc, id) > 0.5f ? 0.0f : 1.0f); };
+
+    switch (t.kind)
+    {
+        case BtnLoad:
+            chooser = std::make_unique<juce::FileChooser> ("Load a sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) loadFile (fc.getResult()); });
+            break;
+        case BtnArrange:
+        {
+            juce::String err;
+            if (proc.importFromArrange (err)) selectSlice (0);
+            else showMessage (err);
+            break;
+        }
+        case BtnEmbed:     toggle ("embed"); break;
+        case BtnReverse:   toggle ("reverse"); break;
+        case BtnSnap:      toggle ("snap"); break;
+        case BtnLoop:      toggle ("loop"); break;
+        case BtnFreeze:    toggle ("freeze"); break;
+        case BtnSync:      toggle ("sync"); break;
+        case BtnFormants:  toggle ("keepFormants"); break;
+        case BtnFilterOn:  toggle ("filterOn"); break;
+        case BtnSliceLoop:
+        {
+            auto st = proc.getSliceSetting (selectedSlice);
+            st.loop = ! st.loop;
+            proc.setSliceSetting (selectedSlice, st);
+            break;
+        }
+        case Slider:
+        {
+            const auto& d = sliders[(size_t) t.index];
+            dragStartX = e.position.x;
+            dragStartNorm = sliderNorm (d);
+            if (! isSliceSlider (d))
+                if (auto* p = proc.apvts.getParameter (d.id)) p->beginChangeGesture();
+            break;
+        }
+        case None: default: break;
+    }
+    repaint();
+}
+
+void SliceDeckEditor::mouseDrag (const juce::MouseEvent& e)
+{
+    if (active.kind == Slider)
+    {
+        const auto& d = sliders[(size_t) active.index];
+        const float fine = e.mods.isShiftDown() ? 0.15f : 1.0f;
+        setSliderNorm (d, dragStartNorm + (e.position.x - dragStartX) / d.rect.getWidth() * fine);
+    }
+    repaint();
+}
+
+void SliceDeckEditor::mouseUp (const juce::MouseEvent& e)
+{
+    if (active.kind == Slider)
+    {
+        const auto& d = sliders[(size_t) active.index];
+        if (! isSliceSlider (d))
+            if (auto* p = proc.apvts.getParameter (d.id)) p->endChangeGesture();
+    }
+    active = {};
+    hover = findTarget (e.position);
+    repaint();
+}
+
+void SliceDeckEditor::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    const auto t = findTarget (e.position);
+    if (t.kind == Slider) resetSlider (sliders[(size_t) t.index]);
+    active = {};
+    repaint();
+}
+
+void SliceDeckEditor::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+{
+    if (std::abs (w.deltaY) < 1.0e-4f) return;
+    const auto t = findTarget (e.position);
+    if (t.kind == Slider)
+        nudgeSlider (sliders[(size_t) t.index], w.deltaY > 0 ? 1.0f : -1.0f, e.mods.isShiftDown());
+    repaint();
+}
+
+//==============================================================================
+void SliceDeckEditor::selectSlice (int index)
+{
+    auto map = proc.getSliceMap();
+    const int count = map != nullptr ? (int) map->slices.size() : 0;
+    selectedSlice = juce::jlimit (0, juce::jmax (0, count - 1), index);
+    waveform.selectedSlice = selectedSlice;
+    repaint();
 }
 
 bool SliceDeckEditor::isInterestedInFileDrag (const juce::StringArray& files)
@@ -785,12 +909,14 @@ bool SliceDeckEditor::isInterestedInFileDrag (const juce::StringArray& files)
 
 void SliceDeckEditor::filesDropped (const juce::StringArray& files, int, int)
 {
+    waveform.fileHover = false;
     for (auto& f : files)
         if (juce::File (f).hasFileExtension ("wav;aif;aiff;flac;ogg;mp3"))
         {
             loadFile (juce::File (f));
-            return;
+            break;
         }
+    repaint();
 }
 
 void SliceDeckEditor::loadFile (const juce::File& f)
@@ -798,10 +924,9 @@ void SliceDeckEditor::loadFile (const juce::File& f)
     juce::String error;
     if (! proc.loadFile (f, error))
     {
-        statusLabel.setText ("Could not load " + f.getFileName() + ": " + error, juce::dontSendNotification);
-        statusLabel.setColour (juce::Label::textColourId, accent);
+        showMessage ("LOAD FAILED");
         return;
     }
     selectSlice (0);
-    changeListenerCallback (nullptr);
+    repaint();
 }
