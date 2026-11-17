@@ -62,7 +62,7 @@ public:
     void filesDropped (const juce::StringArray&, int, int) override;
 
 private:
-    enum Kind { None, BtnLoad, BtnEmbed, BtnDrag, BtnDragLen, BtnReverse, BtnSnap, BtnLoop,
+    enum Kind { None, BtnLoad, BtnArrange, BtnEmbed, BtnDrag, BtnDragLen, BtnReverse, BtnSnap, BtnLoop,
                 BtnRndOn, BtnRandomize, BtnFilterOn, Slider };
     struct Target { Kind kind = None; int index = -1; };
 
@@ -103,13 +103,15 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 
     juce::Rectangle<float> pTitle, pFile, pClip, pWave, pRandom, pSlicing, pVoice, pEnv, pFilter, pOut, pSlice;
-    juce::Rectangle<float> bLoad, bEmbed, bDrag, bDragLen, bReverse, bSnap, bLoop, bRndOn, bRandomize, bFilterOn, stripRect;
+    juce::Rectangle<float> bLoad, bArrange, bEmbed, bDrag, bDragLen, bReverse, bSnap, bLoop, bRndOn, bRandomize, bFilterOn, stripRect;
     std::vector<SliderDef> sliders;
 
     Target hover, active;
     float dragStartX = 0, dragStartNorm = 0;
     bool midiDragging = false;
-    double loadErrorTime = -100.0;
+    double messageTime = -100.0;
+    juce::String message;
+    void showMessage (const juce::String& m) { message = m.toUpperCase(); messageTime = juce::Time::getMillisecondCounterHiRes() / 1000.0; repaint(); }
     int selectedSlice = 0;
     juce::String layoutKey;
 

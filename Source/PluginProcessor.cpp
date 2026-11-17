@@ -9,18 +9,25 @@ namespace
     constexpr int minSliceLen = 16;
 
     bool readAudioFile (juce::AudioFormatManager& fm, const juce::File& f,
-                        juce::AudioBuffer<float>& dest, double& rate, juce::String& error)
+                        juce::AudioBuffer<float>& dest, double& rate, juce::String& error,
+                        double startSec = 0.0, double lengthSec = 0.0)
     {
         if (! f.existsAsFile()) { error = "File not found"; return false; }
         std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
         if (r == nullptr) { error = "Unsupported audio format"; return false; }
         if (r->lengthInSamples <= 0 || r->sampleRate <= 0) { error = "File is empty"; return false; }
-        if ((double) r->lengthInSamples / r->sampleRate > 600.0) { error = "File is longer than 10 minutes"; return false; }
 
-        const int len = (int) r->lengthInSamples;
+        const juce::int64 total = r->lengthInSamples;
+        const juce::int64 first = juce::jlimit ((juce::int64) 0, total - 1, (juce::int64) std::llround (startSec * r->sampleRate));
+        juce::int64 count = lengthSec > 0.0 ? (juce::int64) std::llround (lengthSec * r->sampleRate) : total - first;
+        count = juce::jmin (count, total - first);
+        if (count < 64) { error = "Clip is too short"; return false; }
+        if ((double) count / r->sampleRate > 600.0) { error = "Longer than 10 minutes"; return false; }
+
+        const int len = (int) count;
         const int ch = (int) juce::jlimit (1u, 2u, r->numChannels);
         dest.setSize (ch, len);
-        r->read (&dest, 0, len, 0, true, ch > 1);
+        r->read (&dest, 0, len, first, true, ch > 1);
         rate = r->sampleRate;
         return true;
     }
@@ -355,11 +362,23 @@ void SliceDeckProcessor::rebuildSlices()
 }
 
 //==============================================================================
-bool SliceDeckProcessor::loadFile (const juce::File& file, juce::String& error)
+bool SliceDeckProcessor::importFromArrange (juce::String& error)
+{
+    ReaperBridge::ArrangeItem item;
+    if (! reaper.getSelectedAudioItem (item, error)) return false;
+    {
+        const juce::ScopedLock sl (stateLock);
+        missing = false;     // an import is always a new sample, never a relink
+    }
+    return loadFile (item.file, error, item.startSec, item.lengthSec, item.name);
+}
+
+bool SliceDeckProcessor::loadFile (const juce::File& file, juce::String& error,
+                                   double startSec, double lengthSec, const juce::String& displayName)
 {
     juce::AudioBuffer<float> buf;
     double rate = 44100.0;
-    if (! readAudioFile (formats, file, buf, rate, error))
+    if (! readAudioFile (formats, file, buf, rate, error, startSec, lengthSec))
         return false;
 
     bool relink = false;
@@ -368,8 +387,10 @@ bool SliceDeckProcessor::loadFile (const juce::File& file, juce::String& error)
         relink = missing;      // relinking keeps slice markers and settings
         originalAudio = std::move (buf);
         originalRate = rate;
-        sampleName = file.getFileName();
+        sampleName = displayName.isNotEmpty() ? displayName : file.getFileName();
         absolutePath = file.getFullPathName();
+        rangeStart = startSec;
+        rangeLength = lengthSec;
         relativePath.clear();
         missing = false;
         if (! relink)
@@ -1024,9 +1045,11 @@ bool SliceDeckProcessor::decodeAudio (const juce::String& base64)
 bool SliceDeckProcessor::tryResolveMissing()
 {
     juce::String rel, abs, name;
+    double rs = 0.0, rl = 0.0;
     {
         const juce::ScopedLock sl (stateLock);
-        rel = relativePath; abs = absolutePath; name = sampleName;
+        rel = relativePath; abs = absolutePath; name = absolutePath.isNotEmpty() ? juce::File (absolutePath).getFileName() : sampleName;
+        rs = rangeStart; rl = rangeLength;
     }
 
     juce::Array<juce::File> candidates;
@@ -1044,7 +1067,7 @@ bool SliceDeckProcessor::tryResolveMissing()
         juce::AudioBuffer<float> buf;
         double rate = 44100.0;
         juce::String err;
-        if (readAudioFile (formats, f, buf, rate, err))
+        if (readAudioFile (formats, f, buf, rate, err, rs, rl))
         {
             const juce::ScopedLock sl (stateLock);
             originalAudio = std::move (buf);
@@ -1077,6 +1100,8 @@ void SliceDeckProcessor::getStateInformation (juce::MemoryBlock& destData)
     s->setAttribute ("path", absolutePath);
     s->setAttribute ("relpath", relativePath);
     s->setAttribute ("reversedPoints", playbackReversed);
+    s->setAttribute ("rangeStart", rangeStart);
+    s->setAttribute ("rangeLength", rangeLength);
     if (audioText.isNotEmpty()) s->addTextElement (audioText);
 
     auto* sl2 = root.createNewChildElement ("SLICES");
@@ -1105,7 +1130,7 @@ void SliceDeckProcessor::setStateInformation (const void* data, int sizeInBytes)
     {
         const juce::ScopedLock sl (stateLock);
         originalAudio.setSize (0, 0);
-        sampleName.clear(); absolutePath.clear(); relativePath.clear();
+        sampleName.clear(); absolutePath.clear(); relativePath.clear(); rangeStart = rangeLength = 0.0;
         manualPoints.clear(); sliceSettings.clear();
         missing = false; missingRetries = 0;
         playbackReversed = false;
@@ -1138,6 +1163,8 @@ void SliceDeckProcessor::setStateInformation (const void* data, int sizeInBytes)
             absolutePath = s->getStringAttribute ("path");
             relativePath = s->getStringAttribute ("relpath");
             playbackReversed = s->getBoolAttribute ("reversedPoints");
+            rangeStart = s->getDoubleAttribute ("rangeStart");
+            rangeLength = s->getDoubleAttribute ("rangeLength");
         }
 
         bool ok = false;

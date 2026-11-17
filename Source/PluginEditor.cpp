@@ -382,8 +382,9 @@ void SliceDeckEditor::resized()
     pFile  = R (pTitle.getRight() + G, y1, W - 4 * G - tW - cW, h1);
     pClip  = R (pFile.getRight() + G, y1, cW, h1);
     const float by = y1 + 28.0f, bh = 26.0f;
-    bLoad  = R (pFile.getX() + 12, by, 86, bh);
-    bEmbed = R (bLoad.getRight() + 8, by, 150, bh);
+    bLoad    = R (pFile.getX() + 12, by, 74, bh);
+    bArrange = R (bLoad.getRight() + 8, by, 150, bh);
+    bEmbed   = R (bArrange.getRight() + 8, by, 128, bh);
     bDrag    = R (pClip.getX() + 12, by, 78, bh);
     bDragLen = R (bDrag.getRight() + 6, by, pClip.getRight() - 12 - bDrag.getRight() - 6, bh);
 
@@ -420,7 +421,9 @@ void SliceDeckEditor::layoutSliders()
     const int mode = (int) raw (proc, "mode");
     const int by = (int) raw (proc, "sliceBy");
     const bool loop = raw (proc, "loop") > 0.5f;
-    const auto key = juce::String (mode) + "/" + juce::String (by) + "/" + juce::String ((int) loop);
+    auto sm = proc.getSliceMap();
+    const bool hasSlices = sm != nullptr && ! sm->slices.empty();
+    const auto key = juce::String (mode) + "/" + juce::String (by) + "/" + juce::String ((int) loop) + "/" + juce::String ((int) hasSlices);
     if (key == layoutKey) return;
     layoutKey = key;
 
@@ -452,7 +455,7 @@ void SliceDeckEditor::layoutSliders()
         { pEnv, { "attack", "decay", "sustain", "release" } },
         { pFilter, { "filterType", "cutoff", "reso" } },
         { pOut, { "volume", "pan", "vel" } },
-        { pSlice, isSlice ? std::vector<juce::String> { "sliceVol", "slicePitch" } : std::vector<juce::String>() } };
+        { pSlice, isSlice && hasSlices ? std::vector<juce::String> { "sliceVol", "slicePitch" } : std::vector<juce::String>() } };
 
     for (auto& s : sliders) s.visible = false;
     for (auto& [panel, ids] : panels)
@@ -646,7 +649,7 @@ void SliceDeckEditor::paint (juce::Graphics& g)
     g.drawText ("LITE  /  SIMPLE SLICE SAMPLER", pTitle.getX() + 15, pTitle.getY() + 41, pTitle.getWidth() - 20, 14, juce::Justification::centredLeft);
 
     juce::String st; juce::Colour stc;
-    if (nowSeconds() - loadErrorTime < 4.0)                           { st = "LOAD FAILED";  stc = cRed; }
+    if (nowSeconds() - messageTime < 4.0)                             { st = message;        stc = cRed; }
     else if (proc.isSampleMissing())                                  { st = "FILE MISSING"; stc = cRed; }
     else if (! hasSmp)                                                { st = "NO SAMPLE";    stc = cOrange; }
     else if (proc.getRandomStep() >= 0)                               { st = "RANDOM";       stc = cPurple; }
@@ -659,6 +662,8 @@ void SliceDeckEditor::paint (juce::Graphics& g)
     // ---- sample file ----
     drawPanel (g, pFile, "SAMPLE FILE", cTeal);
     drawPill (g, bLoad, "LOAD", hov (BtnLoad) ? cTealHov : cTeal, juce::Colours::white);
+    drawPill (g, bArrange, "FROM ARRANGE", ! proc.isInReaper() ? cInset : (hov (BtnArrange) ? cTealHov : cTeal),
+              proc.isInReaper() ? juce::Colours::white : cLabel, 12.0f);
     drawToggle (g, BtnEmbed, embed ? "EMBEDDED" : "EMBED IN PROJECT", embed, cTeal, 11.0f);
     {
         const auto area = juce::Rectangle<float> (bEmbed.getRight() + 12, bEmbed.getY(), pFile.getRight() - 12 - bEmbed.getRight() - 12, bEmbed.getHeight());
@@ -787,7 +792,7 @@ juce::Rectangle<float> SliceDeckEditor::buttonRect (Kind k) const
 {
     switch (k)
     {
-        case BtnLoad: return bLoad;         case BtnEmbed: return bEmbed;
+        case BtnLoad: return bLoad;         case BtnEmbed: return bEmbed;     case BtnArrange: return bArrange;
         case BtnDrag: return bDrag;         case BtnDragLen: return bDragLen;
         case BtnReverse: return bReverse;   case BtnSnap: return bSnap;
         case BtnLoop: return (int) raw (const_cast<SliceDeckProcessor&> (proc), "mode") == SliceDeckProcessor::modeClassic ? bLoop : juce::Rectangle<float>();
@@ -799,7 +804,7 @@ juce::Rectangle<float> SliceDeckEditor::buttonRect (Kind k) const
 
 SliceDeckEditor::Target SliceDeckEditor::findTarget (juce::Point<float> p) const
 {
-    for (auto k : { BtnLoad, BtnEmbed, BtnDrag, BtnDragLen, BtnReverse, BtnSnap, BtnLoop, BtnRndOn, BtnRandomize, BtnFilterOn })
+    for (auto k : { BtnLoad, BtnArrange, BtnEmbed, BtnDrag, BtnDragLen, BtnReverse, BtnSnap, BtnLoop, BtnRndOn, BtnRandomize, BtnFilterOn })
         if (buttonRect (k).contains (p)) return { k, -1 };
     for (int i = 0; i < (int) sliders.size(); ++i)
         if (sliders[(size_t) i].visible && sliders[(size_t) i].rect.expanded (0, 2).contains (p)) return { Slider, i };
@@ -832,6 +837,13 @@ void SliceDeckEditor::mouseDown (const juce::MouseEvent& e)
             chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                                   [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) loadFile (fc.getResult()); });
             break;
+        case BtnArrange:
+        {
+            juce::String err;
+            if (proc.importFromArrange (err)) selectSlice (0);
+            else showMessage (err);
+            break;
+        }
         case BtnEmbed:     toggle ("embed"); break;
         case BtnReverse:   toggle ("reverse"); break;
         case BtnSnap:      toggle ("snap"); break;
@@ -939,7 +951,7 @@ void SliceDeckEditor::loadFile (const juce::File& f)
     juce::String error;
     if (! proc.loadFile (f, error))
     {
-        loadErrorTime = nowSeconds();
+        showMessage ("LOAD FAILED");
         return;
     }
     selectSlice (0);
