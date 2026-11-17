@@ -11,6 +11,16 @@ A simple VST3 slice sampler, modeled on Ableton's Simpler.
 - **Sound:** amp envelope (ADSR), velocity, filter (low-pass, high-pass, band-pass), volume, pan, transpose, detune, reverse, snap to zero crossings
 - **Samples:** embedded in the project (on by default). With embedding off, REAPER saves a relative path when the file is inside the project folder.
 
+## Random Play
+
+In Slice mode, Random Play picks a number of slices at random (**SLICES**, 7 by default) and loops them, one slice per step (**RATE**, 1/16 by default), locked to REAPER's transport.
+
+- **RANDOM PLAY** turns it on. It plays whenever REAPER plays.
+- **RANDOMIZE** picks a new set. Changing **SLICES** also picks a new set.
+- The same set keeps looping until you randomize again, and it's saved with the project.
+- If you ask for more slices than the sample has, every slice is used before any repeats.
+- **DRAG** (MIDI CLIP) drags the current loop into REAPER as a MIDI item: the whole loop, or 1/2/4/8 bars (click the length pill to change it). With Random Play off, that item plays the same pattern through SliceDeck Lite.
+
 ## Mouse controls on the waveform
 
 | Action | What it does |

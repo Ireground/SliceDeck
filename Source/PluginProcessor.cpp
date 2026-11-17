@@ -78,6 +78,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout SliceDeckProcessor::createLa
     l.add (std::make_unique<AudioParameterFloat>  (ParameterID { "detune", 1 }, "Detune", NormalisableRange<float> (-50.0f, 50.0f, 0.1f), 0.0f, AudioParameterFloatAttributes().withLabel ("ct")));
 
     l.add (std::make_unique<AudioParameterBool>   (ParameterID { "embed", 1 }, "Embed Sample", true));
+
+    // Random Play
+    l.add (std::make_unique<AudioParameterBool>   (ParameterID { "rndOn", 2 }, "Random Play", false));
+    l.add (std::make_unique<AudioParameterInt>    (ParameterID { "rndCount", 2 }, "Random Slices", 1, 64, 7));
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { "rndRate", 2 }, "Random Rate", StringArray { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32" }, 3));
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { "dragLen", 2 }, "Drag Length", StringArray { "LOOP", "1 BAR", "2 BARS", "4 BARS", "8 BARS" }, 0));
     return l;
 }
 
@@ -91,6 +97,7 @@ SliceDeckProcessor::SliceDeckProcessor()
         apvts.addParameterListener (id, this);
     apvts.addParameterListener ("reverse", this);
 
+    lastRndCount = (int) param ("rndCount");
     startTimerHz (30);
 }
 
@@ -151,6 +158,16 @@ void SliceDeckProcessor::timerCallback()
     {
         rebuildSlices();
     }
+
+    // new slice count for Random Play -> pick a new set
+    if ((int) param ("rndCount") != lastRndCount)
+    {
+        randomize();
+        lastRndCount = (int) param ("rndCount");
+    }
+    if (rndLen.load() == 0)
+        if (auto m = getSliceMap(); m != nullptr && ! m->slices.empty())
+            randomize();
 
     // Retry finding a missing file for a few seconds after the project loads
     bool retry = false;
@@ -371,7 +388,87 @@ bool SliceDeckProcessor::loadFile (const juce::File& file, juce::String& error)
 
     needsReslice = false;
     rebuildPlayback();
+    if (! relink) randomize();
     return true;
+}
+
+//==============================================================================
+double SliceDeckProcessor::stepBeatsFor (int r)
+{
+    static const double beats[] = { 1.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };
+    return beats[juce::jlimit (0, 5, r)];
+}
+
+void SliceDeckProcessor::randomize()
+{
+    auto map = getSliceMap();
+    const int count = juce::jlimit (1, MaxRandom, (int) param ("rndCount"));
+    const int numSlices = map != nullptr ? (int) map->slices.size() : 0;
+    if (numSlices == 0) { rndLen = 0; sendChangeMessage(); return; }
+
+    // distinct slices while there are enough, then repeats; random order
+    std::vector<int> pool;
+    std::vector<int> out;
+    while ((int) out.size() < count)
+    {
+        if (pool.empty())
+        {
+            for (int i = 0; i < numSlices; ++i) pool.push_back (i);
+            for (int i = numSlices - 1; i > 0; --i) std::swap (pool[(size_t) i], pool[(size_t) rng.nextInt (i + 1)]);
+        }
+        out.push_back (pool.back());
+        pool.pop_back();
+    }
+    for (int i = 0; i < count; ++i) rndSeq[(size_t) i] = out[(size_t) i];
+    rndLen = count;
+    sendChangeMessage();
+}
+
+juce::File SliceDeckProcessor::writeMidiFile()
+{
+    constexpr int tpq = 960;
+    const int len = rndLen.load();
+    auto map = getSliceMap();
+    if (len == 0 || map == nullptr || map->slices.empty()) return {};
+
+    const double stl = stepBeatsFor ((int) param ("rndRate"));
+    const double L = len * stl;
+    const int dl = juce::jlimit (0, 4, (int) param ("dragLen"));
+    static const int bars[] = { 0, 1, 2, 4, 8 };
+    const double total = dl == 0 ? L : bars[dl] * 4.0;
+    const int first = (int) param ("firstNote");
+
+    juce::MidiMessageSequence seq;
+    seq.addEvent (juce::MidiMessage::textMetaEvent (3, "SliceDeck Lite"), 0);
+    seq.addEvent (juce::MidiMessage::timeSignatureMetaEvent (4, 4), 0);
+    for (int k = 0; k * stl < total - 1.0e-9; ++k)
+    {
+        const int slice = rndSeq[(size_t) (k % len)].load() % (int) map->slices.size();
+        const int note = juce::jlimit (0, 127, first + slice);
+        const double on = std::round (k * stl * tpq);
+        const double off = std::round (std::min (total, (k + 1) * stl) * tpq);
+        seq.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 100), on);
+        seq.addEvent (juce::MidiMessage::noteOff (1, note), std::max (on + 1.0, off - 1.0));
+    }
+    seq.addEvent (juce::MidiMessage::endOfTrack(), std::round (total * tpq));
+    seq.updateMatchedPairs();
+
+    juce::MidiFile file;
+    file.setTicksPerQuarterNote (tpq);
+    file.addTrack (seq);
+
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("SliceDeck Lite");
+    dir.createDirectory();
+    const juce::String lenTxt = dl == 0 ? juce::String (len) + "slices" : juce::String (bars[dl]) + "bar";
+    auto out = dir.getChildFile (juce::File::createLegalFileName (
+        "SliceDeck Lite " + lenTxt + " " + juce::Time::getCurrentTime().formatted ("%H%M%S") + ".mid"));
+    juce::FileOutputStream os (out);
+    if (! os.openedOk()) return {};
+    os.setPosition (0);
+    os.truncate();
+    file.writeTo (os);
+    os.flush();
+    return out;
 }
 
 juce::String SliceDeckProcessor::getSampleName() const
@@ -614,7 +711,7 @@ void SliceDeckProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     const float transpose = param ("transpose") + param ("detune") * 0.01f;
     const double rateRatio = data->sampleRate / hostRate;
 
-    auto noteOn = [&] (int note, float velocity)
+    auto noteOn = [&] (int note, float velocity, int forcedSlice)
     {
         float semis = transpose;
         int start = map->trimStart, end = map->trimEnd;
@@ -623,7 +720,7 @@ void SliceDeckProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
         if (mode == modeSlice)
         {
-            sliceIdx = note - (int) param ("firstNote");
+            sliceIdx = forcedSlice >= 0 ? forcedSlice : note - (int) param ("firstNote");
             if (sliceIdx < 0 || sliceIdx >= (int) map->slices.size()) return;
             const auto& s = map->slices[(size_t) sliceIdx];
             start = s.start; end = s.end;
@@ -668,7 +765,7 @@ void SliceDeckProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         v.end = end;
         v.pos = (double) start;
         v.inc = std::pow (2.0, semis / 12.0) * rateRatio;
-        v.ignoreNoteOff = (mode != modeClassic) && trigger;
+        v.ignoreNoteOff = ((mode != modeClassic) && trigger) || note == RandomNote;
         v.loop = (mode == modeClassic) && param ("loop") > 0.5f;
         v.loopStart = start + (int) ((float) (end - start) * param ("loopStart") * 0.01f);
         if (v.loopStart >= end - 16) v.loopStart = start;
@@ -682,18 +779,80 @@ void SliceDeckProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         v.env.noteOn();
     };
 
-    int pos = 0;
+    // ---- Random Play: one random slice per step while the transport runs ----
+    struct GenEvent { int offset; int slice; };
+    std::array<GenEvent, 128> gen {};
+    int numGen = 0;
+    {
+        double bpm = 120.0, ppq = 0.0;
+        bool hostPlaying = false;
+        if (auto* ph = getPlayHead())
+            if (auto p = ph->getPosition())
+            {
+                hostPlaying = p->getIsPlaying();
+                if (auto q = p->getPpqPosition()) ppq = *q; else hostPlaying = false;
+                if (auto b = p->getBpm()) bpm = *b;
+            }
+
+        const int len = rndLen.load();
+        const bool active = hostPlaying && param ("rndOn") > 0.5f && mode == modeSlice
+                            && len > 0 && ! map->slices.empty();
+        const double spb = hostRate * 60.0 / juce::jmax (1.0, bpm);
+        const double stl = stepBeatsFor ((int) param ("rndRate"));
+        const double b0 = (wasPlaying && std::abs (ppq - prevB1) < 2.0 / spb) ? prevB1 : ppq;
+        const double b1 = b0 + numSamples / spb;
+        prevB1 = b1;
+
+        if (active)
+        {
+            for (double k = std::ceil (b0 / stl - 1.0e-9); k * stl < b1 && numGen < (int) gen.size(); k += 1.0)
+            {
+                const double t = k * stl;
+                if (t < b0 - 1.0e-9) continue;
+                const long long step = (long long) std::llround (k);
+                const int idx = (int) (((step % len) + len) % len);
+                gen[(size_t) numGen++] = { juce::jlimit (0, numSamples - 1, (int) std::floor ((t - b0) * spb + 0.5)),
+                                           getRandomSlice (idx) % (int) map->slices.size() };
+            }
+            const long long cur = (long long) std::floor (b0 / stl + 1.0e-9);
+            rndStep = (int) (((cur % len) + len) % len);
+        }
+        else
+        {
+            if (wasPlaying)
+                for (auto& v : voices) if (v.active && v.note == RandomNote) stealVoice (v);
+            rndStep = -1;
+        }
+        wasPlaying = active;
+        transportPlaying = hostPlaying;
+    }
+
+    int pos = 0, gi = 0;
+    auto handleGen = [&] (int upTo)
+    {
+        while (gi < numGen && gen[(size_t) gi].offset <= upTo)
+        {
+            const int t = gen[(size_t) gi].offset;
+            if (t > pos) { renderVoices (buffer, pos, t - pos, *data, *map); pos = t; }
+            for (auto& v : voices) if (v.active && v.note == RandomNote) stealVoice (v);
+            noteOn (RandomNote, 0.8f, gen[(size_t) gi].slice);
+            ++gi;
+        }
+    };
+
     for (const auto meta : midi)
     {
         const int t = juce::jlimit (0, numSamples, meta.samplePosition);
+        handleGen (t - 1);
         if (t > pos) { renderVoices (buffer, pos, t - pos, *data, *map); pos = t; }
 
         const auto msg = meta.getMessage();
-        if (msg.isNoteOn())             noteOn (msg.getNoteNumber(), msg.getFloatVelocity());
+        if (msg.isNoteOn())             noteOn (msg.getNoteNumber(), msg.getFloatVelocity(), -1);
         else if (msg.isNoteOff())       handleNoteOff (msg.getNoteNumber());
         else if (msg.isAllNotesOff() || msg.isAllSoundOff())
             for (auto& v : voices) stealVoice (v);
     }
+    handleGen (numSamples);
     if (pos < numSamples) renderVoices (buffer, pos, numSamples - pos, *data, *map);
 
     // playhead for the display
@@ -927,6 +1086,11 @@ void SliceDeckProcessor::getStateInformation (juce::MemoryBlock& destData)
     sl2->setAttribute ("manual", pts.joinIntoString (","));
     sl2->setAttribute ("settings", sets.joinIntoString (","));
 
+    auto* rnd = root.createNewChildElement ("RANDOM");
+    juce::StringArray seqTxt;
+    for (int i = 0; i < rndLen.load(); ++i) seqTxt.add (juce::String (rndSeq[(size_t) i].load()));
+    rnd->setAttribute ("seq", seqTxt.joinIntoString (","));
+
     copyXmlToBinary (root, destData);
 }
 
@@ -945,6 +1109,15 @@ void SliceDeckProcessor::setStateInformation (const void* data, int sizeInBytes)
         manualPoints.clear(); sliceSettings.clear();
         missing = false; missingRetries = 0;
         playbackReversed = false;
+
+        if (auto* rnd = xml->getChildByName ("RANDOM"))
+        {
+            int n = 0;
+            for (auto& t : juce::StringArray::fromTokens (rnd->getStringAttribute ("seq"), ",", ""))
+                if (t.isNotEmpty() && n < MaxRandom) rndSeq[(size_t) n++] = t.getIntValue();
+            rndLen = n;
+        }
+        lastRndCount = (int) param ("rndCount");
 
         if (auto* sl2 = xml->getChildByName ("SLICES"))
         {

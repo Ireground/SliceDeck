@@ -85,6 +85,19 @@ public:
     SliceSetting getSliceSetting (int sliceIndex) const;
 
     void previewNote (int note, bool on);
+
+    //== Random Play
+    static constexpr int MaxRandom = 64;
+    static constexpr int RandomNote = 200;      // internal note number for random-play voices
+    static double stepBeatsFor (int rateIndex);
+    void randomize();                           // pick a new random set of slices
+    int getRandomLength() const noexcept { return rndLen.load(); }
+    int getRandomSlice (int i) const noexcept { return rndSeq[(size_t) juce::jlimit (0, MaxRandom - 1, i)].load(); }
+    int getRandomStep() const noexcept { return rndStep.load(); }
+    bool isTransportPlaying() const noexcept { return transportPlaying.load(); }
+    juce::File writeMidiFile();
+    float getParam (const juce::String& id) const { return param (id); }
+    void setParamValue (const juce::String& id, float plain) { setParam (id, plain); }
     int getRootNote() const;
     int getPlayheadSample() const noexcept { return playhead.load(); }
     int getLastTriggeredSlice() const noexcept { return lastSlice.load(); }
@@ -140,6 +153,14 @@ private:
     std::vector<SliceSetting> sliceSettings;
     int missingRetries = 0;
     int timerTick = 0;
+    int lastRndCount = -1;
+
+    std::array<std::atomic<int>, MaxRandom> rndSeq {};
+    std::atomic<int> rndLen { 0 }, rndStep { -1 };
+    std::atomic<bool> transportPlaying { false };
+    double prevB1 = 0.0;
+    bool wasPlaying = false;
+    juce::Random rng;
     const SampleData* lastDataSeen = nullptr;   // audio thread
 
     std::atomic<bool> needsReslice { false }, needsPlaybackRebuild { false };

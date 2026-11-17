@@ -4,17 +4,6 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
-class SliceDeckLook : public juce::LookAndFeel_V4
-{
-public:
-    SliceDeckLook();
-    void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos,
-                           float startAngle, float endAngle, juce::Slider&) override;
-    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
-    void drawComboBox (juce::Graphics&, int w, int h, bool down, int bx, int by, int bw, int bh, juce::ComboBox&) override;
-};
-
-//==============================================================================
 class WaveformView : public juce::Component
 {
 public:
@@ -28,6 +17,7 @@ public:
     void mouseMove (const juce::MouseEvent&) override;
 
     int selectedSlice = 0;
+    bool fileHover = false;
     std::function<void (int)> onSliceSelected;
 
 private:
@@ -58,51 +48,70 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    bool isInterestedInFileDrag (const juce::StringArray& files) override;
-    void filesDropped (const juce::StringArray& files, int, int) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+    bool isInterestedInFileDrag (const juce::StringArray&) override;
+    void fileDragEnter (const juce::StringArray&, int, int) override { waveform.fileHover = true; waveform.repaint(); }
+    void fileDragExit (const juce::StringArray&) override { waveform.fileHover = false; waveform.repaint(); }
+    void filesDropped (const juce::StringArray&, int, int) override;
 
 private:
-    using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
-    using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
-    using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    enum Kind { None, BtnLoad, BtnEmbed, BtnDrag, BtnDragLen, BtnReverse, BtnSnap, BtnLoop,
+                BtnRndOn, BtnRandomize, BtnFilterOn, Slider };
+    struct Target { Kind kind = None; int index = -1; };
 
-    struct Knob  { juce::Slider slider; juce::Label label; std::unique_ptr<SliderAtt> att; };
-    struct Combo { juce::ComboBox box; juce::Label label; std::unique_ptr<ComboAtt> att; };
-    struct Toggle { juce::TextButton button; std::unique_ptr<ButtonAtt> att; };
+    struct SliderDef
+    {
+        juce::String id, label;
+        juce::Colour colour;
+        juce::Rectangle<float> rect;
+        bool visible = false;
+    };
 
-    void setupKnob (Knob&, const juce::String& paramId, const juce::String& name);
-    void setupCombo (Combo&, const juce::String& paramId, const juce::String& name);
-    void setupToggle (Toggle&, const juce::String& paramId, const juce::String& name);
-    void setupPlainKnob (Knob&, const juce::String& name, double min, double max, double def, const juce::String& suffix);
-    void placeKnob (Knob&, juce::Rectangle<int> area);
-    void placeCombo (Combo&, juce::Rectangle<int> area);
-
-    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void changeListenerCallback (juce::ChangeBroadcaster*) override { repaint(); }
     void timerCallback() override;
-    void updateVisibility();
-    void selectSlice (int index);
+
+    void layoutSliders();
+    Target findTarget (juce::Point<float>) const;
+    juce::Rectangle<float> buttonRect (Kind) const;
+
+    // slider helpers (parameters plus the two per-slice values)
+    bool isSliceSlider (const SliderDef& d) const { return d.id == "sliceVol" || d.id == "slicePitch"; }
+    float sliderNorm (const SliderDef&) const;
+    void setSliderNorm (const SliderDef&, float norm);
+    void nudgeSlider (const SliderDef&, float dir, bool fine);
+    void resetSlider (const SliderDef&);
+    juce::String sliderText (const SliderDef&) const;
+
+    void drawPanel (juce::Graphics&, juce::Rectangle<float>, const juce::String& title, juce::Colour dot) const;
+    void drawPill (juce::Graphics&, juce::Rectangle<float>, const juce::String& text, juce::Colour fill, juce::Colour textCol, float fontSize = 13.0f) const;
+    void drawToggle (juce::Graphics&, Kind, const juce::String& text, bool on, juce::Colour onCol, float fontSize = 11.0f) const;
+    void drawSlider (juce::Graphics&, const SliderDef&, int index) const;
+
     void loadFile (const juce::File&);
+    void startMidiDrag();
+    void selectSlice (int index);
 
     SliceDeckProcessor& proc;
-    SliceDeckLook look;
     WaveformView waveform;
-
-    juce::TextButton loadButton { "Load" };
-    juce::Label nameLabel, statusLabel, sliceTitle;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    Combo mode, playback, sliceBy, division, filterType;
-    Knob sensitivity, regions, voices, root, firstNote, loopStart, fade;
-    Knob attack, decay, sustain, release, vel;
-    Knob cutoff, reso;
-    Knob volume, pan, transpose, detune;
-    Knob sliceVol, slicePitch;
-    Toggle loop, reverse, snap, filterOn, embed;
+    juce::Rectangle<float> pTitle, pFile, pClip, pWave, pRandom, pSlicing, pVoice, pEnv, pFilter, pOut, pSlice;
+    juce::Rectangle<float> bLoad, bEmbed, bDrag, bDragLen, bReverse, bSnap, bLoop, bRndOn, bRandomize, bFilterOn, stripRect;
+    std::vector<SliderDef> sliders;
 
-    juce::Rectangle<int> sampleBox, sliceBox, ampBox, filterBox, globalBox;
-    int lastMode = -1, lastSliceBy = -1;
-    bool lastLoop = false;
-    int tickCount = 0;
+    Target hover, active;
+    float dragStartX = 0, dragStartNorm = 0;
+    bool midiDragging = false;
+    double loadErrorTime = -100.0;
+    int selectedSlice = 0;
+    juce::String layoutKey;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SliceDeckEditor)
 };
