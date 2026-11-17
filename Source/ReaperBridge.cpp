@@ -35,7 +35,7 @@ void ReaperBridge::setHostContext (Steinberg::FUnknown* hostContext)
 
 bool ReaperBridge::getSelectedAudioItem (ArrangeItem& out, juce::String& error) const
 {
-    if (host == nullptr) { error = "REAPER ONLY"; return false; }
+    if (host == nullptr) { error = "NOT REAPER"; return false; }
     auto* h = asReaper (host);
 
     using GetSelItemFn   = void* (*) (void* proj, int idx);
@@ -58,12 +58,12 @@ bool ReaperBridge::getSelectedAudioItem (ArrangeItem& out, juce::String& error) 
     if (getSel == nullptr || activeTake == nullptr || takeSource == nullptr || sourceName == nullptr
         || itemInfo == nullptr || takeInfo == nullptr)
     {
-        error = "REAPER TOO OLD";
+        error = "OLD REAPER";
         return false;
     }
 
     void* item = getSel (h->getReaperParent (3), 0);
-    if (item == nullptr) { error = "SELECT AN ITEM"; return false; }
+    if (item == nullptr) { error = "NO ITEM"; return false; }
     void* take = activeTake (item);
     if (take == nullptr) { error = "EMPTY ITEM"; return false; }
     if (isMidi != nullptr && isMidi (take)) { error = "MIDI ITEM"; return false; }
@@ -80,7 +80,7 @@ bool ReaperBridge::getSelectedAudioItem (ArrangeItem& out, juce::String& error) 
     const juce::String path = juce::String::fromUTF8 (buf);
     if (path.isEmpty() || ! juce::File::isAbsolutePath (path) || ! juce::File (path).existsAsFile())
     {
-        error = "NO AUDIO FILE";
+        error = "NO FILE";
         return false;
     }
 

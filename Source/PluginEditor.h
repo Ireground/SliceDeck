@@ -111,7 +111,7 @@ private:
     bool midiDragging = false;
     double messageTime = -100.0;
     juce::String message;
-    void showMessage (const juce::String& m) { message = m.toUpperCase(); messageTime = juce::Time::getMillisecondCounterHiRes() / 1000.0; repaint(); }
+    void showMessage (const juce::String& m) { message = m.length() <= 10 ? m.toUpperCase() : juce::String ("FAILED"); messageTime = juce::Time::getMillisecondCounterHiRes() / 1000.0; repaint(); }
     int selectedSlice = 0;
     juce::String layoutKey;
 
